@@ -6,7 +6,7 @@ It supports:
 
 - configurable search terms, sizes, product types, prices, and listing age
 - multiple eBay marketplaces and Vinted regional sites
-- Telegram posts containing images, description, price, link, and listing ID
+- Telegram posts containing images, description, price, clickable product link, listing age, and ID
 - SQLite tracking so the same listing is not processed or posted twice
 - eBay's official Browse API and a best-effort Vinted integration
 
@@ -170,12 +170,16 @@ Each search in `config.yaml` supports:
 - `sources`: `ebay`, `vinted`, or both
 - `max_age_hours`: maximum listing age, or `null` to disable
 - `min_price` and `max_price`: optional price range
+- `required_brands`: accepted brands, normalized for case, spaces, and punctuation
 - `include_keywords`: every phrase must match
 - `include_any_groups`: one phrase from every group must match
 - `exclude_keywords`: any matching phrase rejects the listing
 - source-specific category IDs
 
 Filtering checks the title, description, and available attributes such as brand, size, and colour.
+When `required_brands` is set, a structured marketplace brand must match one configured value exactly after normalization. If a marketplace provides no brand attribute, matching falls back to the normalized title and description.
+
+Marketplace searches and Telegram delivery are ordered newest-first. Increase `pages_per_search` to backfill older results; adapters stop early when a page is not full. Use `max_age_hours: null` if old listings should remain eligible. Setting `send_existing_on_start: true` sends matching backfill results the first time a search runs, so use it carefully.
 
 ## Important Vinted note
 

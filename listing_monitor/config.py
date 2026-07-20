@@ -73,6 +73,7 @@ class SearchConfig:
     max_age_hours: float | None = 24
     min_price: Decimal | None = None
     max_price: Decimal | None = None
+    required_brands: list[str] = field(default_factory=list)
     include_keywords: list[str] = field(default_factory=list)
     include_any_groups: list[list[str]] = field(default_factory=list)
     exclude_keywords: list[str] = field(default_factory=list)
@@ -243,6 +244,9 @@ def load_config(path: Path) -> Config:
                 max_age_hours=age_value,
                 min_price=min_price,
                 max_price=max_price,
+                required_brands=_string_list(
+                    entry.get("required_brands", []), f"searches[{index}].required_brands"
+                ),
                 include_keywords=_string_list(
                     entry.get("include_keywords", []), f"searches[{index}].include_keywords"
                 ),

@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -104,4 +105,32 @@ async def test_identical_remote_queries_are_fetched_once_per_cycle(tmp_path: Pat
     monitor = Monitor(config, [adapter], FakePublisher(), state)
     await monitor.poll_once()
     assert adapter.search_calls == 1
+    state.close()
+
+
+@pytest.mark.asyncio
+async def test_newest_listings_are_published_first(tmp_path: Path):
+    now = datetime.now(UTC)
+    older = Listing(
+        "ebay",
+        "EBAY_GB",
+        "1",
+        "Older jacket",
+        "https://example.test/1",
+        created_at=now - timedelta(hours=2),
+    )
+    newer = Listing(
+        "ebay",
+        "EBAY_GB",
+        "2",
+        "Newer jacket",
+        "https://example.test/2",
+        created_at=now - timedelta(minutes=2),
+    )
+    config = make_config(tmp_path / "state.sqlite3", send_existing=True)
+    state = StateStore(config.app.state_db)
+    publisher = FakePublisher()
+    monitor = Monitor(config, [FakeAdapter([older, newer])], publisher, state)
+    await monitor.poll_once()
+    assert publisher.sent == [newer, older]
     state.close()

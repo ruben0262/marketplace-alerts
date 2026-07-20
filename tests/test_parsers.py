@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from listing_monitor.marketplaces.ebay import EbayAdapter
 from listing_monitor.marketplaces.vinted import VintedAdapter
 
@@ -30,7 +32,12 @@ def test_vinted_parser_accepts_relative_url_and_scalar_price():
             "title": "Gloves",
             "url": "/items/42-gloves",
             "price": "12.50",
-            "photo": {"url": "https://img.test/gloves.jpg"},
+            "brand_title": "Example Brand",
+            "size_title": "M",
+            "photo": {
+                "url": "https://img.test/gloves.jpg",
+                "high_resolution": {"timestamp": 1760000000},
+            },
         },
         "www.vinted.test",
         "gloves",
@@ -39,3 +46,21 @@ def test_vinted_parser_accepts_relative_url_and_scalar_price():
     assert parsed is not None
     assert parsed.url == "https://www.vinted.test/items/42-gloves"
     assert str(parsed.price) == "12.50"
+    assert parsed.attributes == {"Brand": "Example Brand", "Size": "M"}
+    assert parsed.created_at == datetime.fromtimestamp(1760000000, tz=UTC)
+
+
+def test_vinted_detail_helpers_support_brand_dto_and_plugin_size():
+    item = {
+        "brand_dto": {"title": "Example Brand"},
+        "plugins": [
+            {
+                "name": "attributes",
+                "data": {"attributes": [{"code": "size", "data": {"value": "XL"}}]},
+            }
+        ],
+        "photos": [{"high_resolution": {"timestamp": 1760000000}}],
+    }
+    assert VintedAdapter._brand(item) == "Example Brand"
+    assert VintedAdapter._size(item) == "XL"
+    assert VintedAdapter._created_at(item) == datetime.fromtimestamp(1760000000, tz=UTC)

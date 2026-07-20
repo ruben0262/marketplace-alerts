@@ -98,12 +98,16 @@ class VintedAdapter:
             return
         item = data.get("item") or {}
         listing.description = str(item.get("description", ""))
-        listing.created_at = parse_datetime(item.get("created_at_ts") or item.get("created_at"))
+        listing.created_at = self._created_at(item) or listing.created_at
         user = item.get("user") or {}
         listing.seller = user.get("login")
+        brand = self._brand(item)
+        size = self._size(item)
+        if brand:
+            listing.attributes["Brand"] = brand
+        if size:
+            listing.attributes["Size"] = size
         for field_name, label in (
-            ("brand_title", "Brand"),
-            ("size_title", "Size"),
             ("status", "Condition"),
             ("color1", "Color"),
             ("color2", "Secondary color"),
@@ -138,14 +142,14 @@ class VintedAdapter:
         photo = item.get("photo") or {}
         photo_url = photo.get("full_size_url") or photo.get("url")
         attributes = {}
-        for field_name, label in (
-            ("brand_title", "Brand"),
-            ("size_title", "Size"),
-            ("status", "Condition"),
-        ):
-            value = item.get(field_name)
-            if value:
-                attributes[label] = str(value)
+        brand = VintedAdapter._brand(item)
+        size = VintedAdapter._size(item)
+        if brand:
+            attributes["Brand"] = brand
+        if size:
+            attributes["Size"] = size
+        if status := item.get("status"):
+            attributes["Condition"] = str(status)
         return Listing(
             source="vinted",
             marketplace=marketplace,
@@ -156,7 +160,37 @@ class VintedAdapter:
             currency=price.get("currency_code") or price.get("currency"),
             description=str(item.get("description", "")),
             image_urls=[str(photo_url)] if photo_url else [],
-            created_at=parse_datetime(item.get("created_at_ts") or item.get("created_at")),
+            created_at=VintedAdapter._created_at(item),
             search_name=search_name,
             attributes=attributes,
         )
+
+    @staticmethod
+    def _brand(item: dict[str, Any]) -> str:
+        brand_dto = item.get("brand_dto") or {}
+        return str(item.get("brand_title") or brand_dto.get("title") or "").strip()
+
+    @staticmethod
+    def _size(item: dict[str, Any]) -> str:
+        if size := item.get("size_title"):
+            return str(size).strip()
+        for plugin in item.get("plugins") or []:
+            if not isinstance(plugin, dict) or plugin.get("name") != "attributes":
+                continue
+            for attribute in (plugin.get("data") or {}).get("attributes") or []:
+                if isinstance(attribute, dict) and attribute.get("code") == "size":
+                    value = (attribute.get("data") or {}).get("value")
+                    return str(value).strip() if value is not None else ""
+        return ""
+
+    @staticmethod
+    def _created_at(item: dict[str, Any]):
+        direct = parse_datetime(item.get("created_at_ts") or item.get("created_at"))
+        if direct:
+            return direct
+        photos = item.get("photos") or []
+        photo = photos[0] if photos else item.get("photo") or {}
+        if not isinstance(photo, dict):
+            return None
+        timestamp = (photo.get("high_resolution") or {}).get("timestamp")
+        return parse_datetime(timestamp)

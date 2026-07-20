@@ -46,6 +46,8 @@ searches:
     max_age_hours: 24
     min_price: 5
     max_price: 250
+    # Structured brand data must match after case/space/punctuation normalization.
+    required_brands: [example brand]
     include_keywords: []
     # Every group must match at least one phrase. This example is intentionally empty.
     # include_any_groups:

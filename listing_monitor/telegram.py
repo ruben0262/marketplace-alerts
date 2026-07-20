@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import logging
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import httpx
@@ -19,11 +20,51 @@ def _format_price(price: Decimal | None, currency: str | None) -> str:
     return f"{price:,.2f} {currency or ''}".strip()
 
 
+def format_relative_age(created_at: datetime, *, now: datetime | None = None) -> str:
+    reference = (now or datetime.now(UTC)).astimezone(UTC)
+    created = created_at.replace(tzinfo=created_at.tzinfo or UTC).astimezone(UTC)
+    seconds = max(0, int((reference - created).total_seconds()))
+
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        value, unit = seconds // 60, "minute"
+    elif seconds < 86400:
+        value, unit = seconds // 3600, "hour"
+    elif seconds < 604800:
+        value, unit = seconds // 86400, "day"
+    elif seconds < 2592000:
+        value, unit = seconds // 604800, "week"
+    elif seconds < 31536000:
+        value, unit = seconds // 2592000, "month"
+    else:
+        value, unit = seconds // 31536000, "year"
+    suffix = "" if value == 1 else "s"
+    return f"{value} {unit}{suffix} ago"
+
+
+def _truncate_and_escape(value: str, limit: int) -> str:
+    escaped = html.escape(value.strip())
+    if len(escaped) <= limit:
+        return escaped
+    suffix = "..."
+    low, high = 0, len(value)
+    while low < high:
+        middle = (low + high + 1) // 2
+        if len(html.escape(value[:middle].rstrip())) + len(suffix) <= limit:
+            low = middle
+        else:
+            high = middle - 1
+    return html.escape(value[:low].rstrip()) + suffix
+
+
 def format_caption(listing: Listing, *, max_length: int = 1024) -> str:
     heading = f"<b>{html.escape(listing.title)}</b>"
+    product_url = html.escape(listing.url, quote=True)
+    marketplace = html.escape(listing.marketplace)
     fields = [
         f"<b>Price:</b> {html.escape(_format_price(listing.price, listing.currency))}",
-        f"<b>Source:</b> {html.escape(listing.marketplace)}",
+        f'<b>Source:</b> <a href="{product_url}">Visit product here</a> ({marketplace})',
         f"<b>Listing ID:</b> <code>{html.escape(listing.listing_id)}</code>",
         f"<b>Search:</b> {html.escape(listing.search_name)}",
     ]
@@ -31,18 +72,16 @@ def format_caption(listing: Listing, *, max_length: int = 1024) -> str:
         if value := listing.attributes.get(name):
             fields.append(f"<b>{name}:</b> {html.escape(value)}")
     if listing.created_at:
-        fields.append(f"<b>Listed:</b> {html.escape(listing.created_at.isoformat())}")
+        fields.append(f"<b>Listed:</b> {format_relative_age(listing.created_at)}")
     if listing.seller:
         fields.append(f"<b>Seller:</b> {html.escape(listing.seller)}")
-    footer = f'<a href="{html.escape(listing.url, quote=True)}">Open listing</a>'
-    fixed = "\n".join([heading, *fields, "", footer])
+
+    fixed = "\n".join([heading, *fields])
     if not listing.description:
         return fixed[:max_length]
-    remaining = max_length - len(fixed) - 2
-    description = html.escape(listing.description.strip())
-    if remaining > 1 and len(description) > remaining:
-        description = description[: remaining - 1].rstrip() + "…"
-    return "\n".join([heading, *fields, "", description, "", footer])[:max_length]
+    remaining = max(max_length - len(fixed) - 2, 0)
+    description = _truncate_and_escape(listing.description, remaining)
+    return f"{fixed}\n\n{description}"[:max_length]
 
 
 class TelegramPublisher:

@@ -7,7 +7,7 @@ import random
 from collections.abc import Sequence
 
 from .config import Config, SearchConfig
-from .filtering import matches_search
+from .filtering import matches_required_brand, matches_search
 from .marketplaces.base import MarketplaceAdapter
 from .models import Listing
 from .state import StateStore
@@ -93,7 +93,7 @@ class Monitor:
         scope: str,
         initial_seed: bool,
     ) -> None:
-        listings.sort(key=lambda item: item.created_at or self._minimum_datetime())
+        listings.sort(key=lambda item: item.created_at or self._minimum_datetime(), reverse=True)
         match_count = 0
         for listing in listings:
             if self.state.is_seen(listing.key):
@@ -101,6 +101,10 @@ class Monitor:
                     self.state.mark_processed(scope, listing.key)
                 continue
             if self.state.is_processed(scope, listing.key):
+                continue
+            if not matches_required_brand(listing, search, fallback_to_text=False):
+                if not self.dry_run:
+                    self.state.mark_processed(scope, listing.key)
                 continue
             cached = self._cycle_listing_cache.get(listing.key)
             if cached is None:

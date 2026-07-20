@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from listing_monitor.config import SearchConfig
-from listing_monitor.filtering import matches_search
+from listing_monitor.filtering import matches_search, normalize_brand
 from listing_monitor.models import Listing
 
 
@@ -69,3 +69,18 @@ def test_single_letter_size_does_not_match_inside_words():
     search = SearchConfig(name="shorts", query="example brand", include_any_groups=[["m"]])
     assert not matches_search(listing(title="Premium shorts"), search)
     assert matches_search(listing(title="Shorts", attributes={"Size": "M"}), search)
+
+
+def test_required_brand_prefers_structured_brand_and_normalizes_formatting():
+    search = SearchConfig(name="brand", query="brand", required_brands=["Box Raw"])
+    assert normalize_brand(" BOX-RAW ") == "boxraw"
+    assert matches_search(listing(attributes={"Brand": "BOX-RAW"}), search)
+    assert not matches_search(
+        listing(title="Box Raw style hoodie", attributes={"Brand": "Another Brand"}), search
+    )
+
+
+def test_required_brand_falls_back_to_title_when_attribute_is_missing():
+    search = SearchConfig(name="brand", query="brand", required_brands=["Box Raw"])
+    assert matches_search(listing(title="BOXRAW hoodie", attributes={}), search)
+    assert not matches_search(listing(title="Generic hoodie", attributes={}), search)
