@@ -8,7 +8,7 @@ from collections.abc import Sequence
 
 from .config import Config, SearchConfig
 from .filtering import matches_required_brand, matches_search
-from .marketplaces.base import MarketplaceAdapter
+from .marketplaces.base import MarketplaceAdapter, MarketplaceUnavailableError
 from .models import Listing
 from .state import StateStore
 from .telegram import TelegramPublisher
@@ -73,6 +73,9 @@ class Monitor:
                         listings = await adapter.search(search)
                         self._cycle_search_cache[remote_scope] = listings
                     successful_searches += 1
+                except MarketplaceUnavailableError as exc:
+                    LOGGER.warning("%s searches unavailable: %s", adapter.name, exc)
+                    break
                 except Exception:
                     LOGGER.exception("%s search failed: %s", adapter.name, search.name)
                     continue

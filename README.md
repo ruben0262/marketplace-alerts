@@ -183,7 +183,32 @@ Marketplace searches and Telegram delivery are ordered newest-first. Increase `p
 
 ## Important Vinted note
 
-Vinted does not provide an official public marketplace-search API. The Vinted adapter uses the website's catalog and item-detail endpoints and may stop working if Vinted changes them. It uses bounded retries and does not attempt to bypass CAPTCHAs, access controls, or rate limits. An eBay or Vinted failure does not stop the other configured searches.
+Vinted does not provide an official public marketplace-search API. The Vinted adapter uses the website's catalog and item-detail endpoints and may stop working if Vinted changes them. It refreshes anonymous sessions when needed and does not attempt to bypass CAPTCHAs, access controls, or rate limits. An eBay or Vinted failure does not stop the other configured searches.
+
+The adapter uses browser-compatible anonymous sessions and stores cookies under
+`data/vinted-cookies`. If a Vinted site rejects a VPS address, that site is paused for
+`retry_cooldown_seconds` instead of being retried for every configured search.
+
+Some hosting-provider IP ranges are rejected by Vinted even when the same URL works from a home
+browser. If that happens, use a trusted HTTP proxy that you are authorized to use by adding this
+only to the private `.env` file:
+
+```dotenv
+VINTED_PROXY=http://user:password@host:port
+```
+
+The `http://` prefix is optional; both forms are accepted. Never commit the proxy credentials.
+Restart the container after changing `.env`. A proxy is optional; leave the value empty first and
+try the browser-compatible session update on its own. This project does not solve or bypass a
+CAPTCHA. The official
+[Vinted Pro Integrations API](https://pro-docs.svc.vinted.com/) manages a Pro seller's own inventory
+and webhooks; it does not provide public catalog discovery for this monitor.
+
+To check only Vinted connectivity without posting or changing deduplication state:
+
+```powershell
+docker compose run --rm marketplace-alerts python -m listing_monitor --once --dry-run
+```
 
 ## Development
 

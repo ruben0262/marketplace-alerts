@@ -12,6 +12,7 @@ from listing_monitor.config import (
     VintedConfig,
 )
 from listing_monitor.models import Listing
+from listing_monitor.marketplaces.base import MarketplaceUnavailableError
 from listing_monitor.monitor import Monitor
 from listing_monitor.state import StateStore
 
@@ -32,6 +33,12 @@ class FakeAdapter:
 
     async def close(self):
         pass
+
+
+class UnavailableAdapter(FakeAdapter):
+    async def search(self, search):
+        self.search_calls += 1
+        raise MarketplaceUnavailableError("temporary outage")
 
 
 class FakePublisher:
@@ -133,4 +140,16 @@ async def test_newest_listings_are_published_first(tmp_path: Path):
     monitor = Monitor(config, [FakeAdapter([older, newer])], publisher, state)
     await monitor.poll_once()
     assert publisher.sent == [newer, older]
+    state.close()
+
+
+@pytest.mark.asyncio
+async def test_unavailable_marketplace_stops_remaining_searches(tmp_path: Path):
+    config = make_config(tmp_path / "state.sqlite3")
+    config.searches.append(SearchConfig(name="second", query="shorts", sources={"ebay"}))
+    state = StateStore(config.app.state_db)
+    adapter = UnavailableAdapter([])
+    monitor = Monitor(config, [adapter], FakePublisher(), state)
+    await monitor.poll_once()
+    assert adapter.search_calls == 1
     state.close()

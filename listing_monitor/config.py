@@ -63,6 +63,9 @@ class VintedConfig:
     pages_per_search: int = 2
     results_per_page: int = 40
     fetch_item_details: bool = True
+    cookies_dir: Path = Path("data/vinted-cookies")
+    retry_cooldown_seconds: int = 900
+    proxy: str = ""
 
 
 @dataclass(slots=True)
@@ -130,6 +133,15 @@ def _keyword_groups(value: Any, location: str) -> list[list[str]]:
             raise ConfigError(f"{location}[{index}] cannot be empty")
         groups.append(parsed)
     return groups
+
+
+def _normalize_proxy(value: str) -> str:
+    """Return the proxy format expected by the Vinted client without exposing it."""
+    proxy = value.strip()
+    for prefix in ("http://", "https://"):
+        if proxy.casefold().startswith(prefix):
+            return proxy[len(prefix) :]
+    return proxy
 
 
 def load_config(path: Path) -> Config:
@@ -212,6 +224,13 @@ def load_config(path: Path) -> Config:
             vinted_raw.get("results_per_page", 40), "sources.vinted.results_per_page", maximum=96
         ),
         fetch_item_details=bool(vinted_raw.get("fetch_item_details", True)),
+        cookies_dir=Path(str(vinted_raw.get("cookies_dir", "data/vinted-cookies"))),
+        retry_cooldown_seconds=_positive_int(
+            vinted_raw.get("retry_cooldown_seconds", 900),
+            "sources.vinted.retry_cooldown_seconds",
+            maximum=86400,
+        ),
+        proxy=_normalize_proxy(os.getenv("VINTED_PROXY", "")),
     )
 
     searches_raw = root.get("searches", [])

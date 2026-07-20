@@ -6,6 +6,9 @@ All notable changes to this project are documented here. This project follows [K
 
 ### Added
 
+- Browser-compatible Vinted sessions, persistent anonymous cookies, optional proxy support,
+  and per-site failure cooldowns for VPS deployments.
+- Current Vinted item-detail lookups, replacing the obsolete endpoint that returned HTTP 404.
 - A minimal Docker image and Compose service for continuous VPS operation.
 - Clickable product source links and human-readable listing ages in Telegram.
 - Configurable normalized brand validation.
@@ -17,6 +20,8 @@ All notable changes to this project are documented here. This project follows [K
 
 ### Changed
 
+- Expected marketplace outages now produce one concise warning per cycle instead of a traceback
+  for every configured search.
 - Marketplace results are processed newest-first, with deeper backfill controlled by page settings.
 - Renamed the public project and command to Marketplace Alerts.
 - Simplified the repository and consolidated usage guidance into the README.

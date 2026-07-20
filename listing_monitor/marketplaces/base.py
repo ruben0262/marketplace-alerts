@@ -6,6 +6,10 @@ from ..config import SearchConfig
 from ..models import Listing
 
 
+class MarketplaceUnavailableError(RuntimeError):
+    """Raised when a marketplace is temporarily unavailable to this process."""
+
+
 class MarketplaceAdapter(Protocol):
     name: str
 

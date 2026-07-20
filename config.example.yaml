@@ -38,6 +38,10 @@ sources:
     pages_per_search: 2
     results_per_page: 40
     fetch_item_details: true
+    # Anonymous cookies persist in the Docker data volume between restarts.
+    cookies_dir: data/vinted-cookies
+    # Avoid retrying a blocked site on every search and every minute.
+    retry_cooldown_seconds: 900
 
 searches:
   - name: Example apparel search

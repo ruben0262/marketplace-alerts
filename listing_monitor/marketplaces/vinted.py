@@ -1,79 +1,116 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
+
+from vinted import VintedClient
 
 from ..config import AppConfig, SearchConfig, VintedConfig, VintedSite
-from ..http_client import HttpClient
 from ..models import Listing, parse_datetime, parse_decimal
+from .base import MarketplaceUnavailableError
 
 LOGGER = logging.getLogger(__name__)
 
 
 class VintedAdapter:
-    """Best-effort adapter for Vinted's undocumented web catalog endpoint."""
+    """Best-effort adapter backed by browser-compatible anonymous sessions."""
 
     name = "vinted"
 
     def __init__(self, config: VintedConfig, app: AppConfig, user_agent: str) -> None:
         self.config = config
-        self.http = HttpClient(
-            timeout=app.request_timeout_seconds,
-            retries=app.request_retries,
-            user_agent=user_agent,
-        )
-        self._initialized_sites: set[str] = set()
+        self._clients: dict[str, VintedClient] = {}
+        self._unavailable_until: dict[str, float] = {}
 
     async def close(self) -> None:
-        await self.http.close()
-
-    async def _initialize_site(self, site: VintedSite) -> None:
-        if site.url in self._initialized_sites:
-            return
-        # The home page establishes anonymous locale/session cookies used by the catalog.
-        response = await self.http.client.get(
-            site.url,
-            headers={"Accept": "text/html,application/xhtml+xml"},
+        await asyncio.gather(
+            *(client.close() for client in self._clients.values()),
+            return_exceptions=True,
         )
-        response.raise_for_status()
-        self._initialized_sites.add(site.url)
+
+    def _client(self, site: VintedSite) -> VintedClient:
+        client = self._clients.get(site.url)
+        if client is not None:
+            return client
+        hostname = urlparse(site.url).netloc.replace(":", "_")
+        cookies_dir = self.config.cookies_dir / hostname
+        cookies_dir.mkdir(parents=True, exist_ok=True)
+        client = VintedClient(
+            proxy=self.config.proxy or None,
+            cookies_dir=cookies_dir,
+            persist_cookies=True,
+            storage_format="json",
+        )
+        self._clients[site.url] = client
+        return client
+
+    def _available_sites(self) -> list[VintedSite]:
+        now = time.monotonic()
+        return [
+            site for site in self.config.sites if self._unavailable_until.get(site.url, 0) <= now
+        ]
+
+    def _mark_unavailable(self, site: VintedSite, exc: Exception) -> None:
+        self._unavailable_until[site.url] = time.monotonic() + self.config.retry_cooldown_seconds
+        status = getattr(exc, "status_code", None)
+        reason = f"HTTP {status}" if status else type(exc).__name__
+        LOGGER.warning(
+            "%s unavailable (%s); pausing that site for %d seconds",
+            site.name,
+            reason,
+            self.config.retry_cooldown_seconds,
+        )
+
+    def _unavailable_message(self) -> str:
+        now = time.monotonic()
+        remaining = [max(0, int(deadline - now)) for deadline in self._unavailable_until.values()]
+        retry_in = min(remaining, default=self.config.retry_cooldown_seconds)
+        hint = " Configure VINTED_PROXY if this VPS IP is blocked." if not self.config.proxy else ""
+        return f"all configured Vinted sites are unavailable; retry in about {retry_in}s.{hint}"
+
+    @staticmethod
+    def _catalog_url(site: VintedSite, search: SearchConfig) -> str:
+        params: list[tuple[str, str]] = [("search_text", search.query)]
+        if search.min_price is not None:
+            params.append(("price_from", str(search.min_price)))
+        if search.max_price is not None:
+            params.append(("price_to", str(search.max_price)))
+        params.extend(("catalog[]", catalog_id) for catalog_id in search.vinted_catalog_ids)
+        return f"{site.url}/catalog?{urlencode(params)}"
 
     async def search(self, search: SearchConfig) -> list[Listing]:
         listings: dict[str, Listing] = {}
         completed_requests = 0
-        for site in self.config.sites:
-            try:
-                await self._initialize_site(site)
-            except Exception as exc:
-                LOGGER.warning("Could not initialize %s: %s", site.name, exc)
-                continue
+        available_sites = self._available_sites()
+        if not available_sites:
+            raise MarketplaceUnavailableError(self._unavailable_message())
+
+        for site in available_sites:
+            client = self._client(site)
             marketplace = urlparse(site.url).netloc
+            catalog_url = self._catalog_url(site, search)
             for page in range(1, self.config.pages_per_search + 1):
-                params: dict[str, Any] = {
-                    "search_text": search.query,
-                    "order": "newest_first",
-                    "page": page,
-                    "per_page": self.config.results_per_page,
-                }
-                if search.min_price is not None:
-                    params["price_from"] = str(search.min_price)
-                if search.max_price is not None:
-                    params["price_to"] = str(search.max_price)
-                if search.vinted_catalog_ids:
-                    params["catalog_ids"] = ",".join(search.vinted_catalog_ids)
                 try:
-                    data = await self.http.request_json(
-                        "GET", f"{site.url}/api/v2/catalog/items", params=params
+                    items = await client.search_items(
+                        url=catalog_url,
+                        page=page,
+                        per_page=self.config.results_per_page,
+                        order="newest_first",
+                        raw_data=True,
                     )
                 except Exception as exc:
-                    LOGGER.warning("Catalog request failed for %s: %s", site.name, exc)
+                    self._mark_unavailable(site, exc)
                     break
+                self._unavailable_until.pop(site.url, None)
                 completed_requests += 1
-                items = data.get("items", [])
                 if not isinstance(items, list):
                     break
                 for item in items:
+                    if not isinstance(item, dict):
+                        continue
                     listing = self._parse_item(item, marketplace, search.name, site.url)
                     if listing:
                         listings[listing.key] = listing
@@ -81,7 +118,7 @@ class VintedAdapter:
                     break
 
         if not completed_requests:
-            raise RuntimeError("No configured Vinted site completed a catalog request")
+            raise MarketplaceUnavailableError(self._unavailable_message())
         return list(listings.values())
 
     async def enrich(self, listing: Listing) -> None:
@@ -89,14 +126,18 @@ class VintedAdapter:
         if not self.config.fetch_item_details or listing.description:
             return
         base_url = f"https://{listing.marketplace}"
-        try:
-            data = await self.http.request_json(
-                "GET", f"{base_url}/api/v2/items/{listing.listing_id}"
-            )
-        except Exception as exc:
-            LOGGER.debug("Vinted detail lookup failed for %s: %s", listing.key, exc)
+        site = next((item for item in self.config.sites if item.url == base_url), None)
+        if site is None:
             return
-        item = data.get("item") or {}
+        try:
+            item = await self._client(site).item_details(listing.url, raw_data=True)
+        except Exception as exc:
+            status = getattr(exc, "status_code", None)
+            reason = f"HTTP {status}" if status else type(exc).__name__
+            LOGGER.debug("Vinted detail lookup failed for %s (%s)", listing.key, reason)
+            return
+        if not isinstance(item, dict):
+            return
         listing.description = str(item.get("description", ""))
         listing.created_at = self._created_at(item) or listing.created_at
         user = item.get("user") or {}
