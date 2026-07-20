@@ -75,7 +75,14 @@ class Monitor:
                         listings = await adapter.search(search)
                         self._cycle_search_cache[remote_scope] = listings
                     if not self.dry_run:
-                        self.state.track_discovered(listings)
+                        new_product_count = self.state.track_discovered(listings)
+                        if new_product_count:
+                            LOGGER.info(
+                                "%s / %s: recorded %d new product IDs",
+                                adapter.name,
+                                search.name,
+                                new_product_count,
+                            )
                     successful_searches += 1
                 except MarketplaceUnavailableError as exc:
                     LOGGER.warning("%s searches unavailable: %s", adapter.name, exc)
@@ -121,6 +128,9 @@ class Monitor:
             else:
                 listing = cached
             listing.search_name = search.name
+            if not self.dry_run:
+                # Persist detail-enriched metadata even when local filters reject the product.
+                self.state.track_discovered([listing])
             if not matches_search(listing, search):
                 if not self.dry_run:
                     self.state.mark_processed(scope, listing.key)

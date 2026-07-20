@@ -8,13 +8,10 @@ services:
       - .env
     volumes:
       - ./config.yaml:/app/config.yaml:ro
-      - marketplace-alerts-data:/app/data
+      # Host-visible state that survives container removal and `docker compose down`.
+      - ./data:/app/data
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
-
-volumes:
-  marketplace-alerts-data:
-

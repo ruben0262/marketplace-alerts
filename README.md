@@ -86,6 +86,8 @@ Create your private files first:
 ```bash
 cp .env.example .env
 cp config.example.yaml config.yaml
+mkdir -p data
+sudo chown -R 10001:10001 data
 ```
 
 Fill in `.env` and edit `config.yaml`, then validate them inside the container:
@@ -122,11 +124,29 @@ docker compose restart marketplace-alerts
 docker compose down
 ```
 
-The `restart: unless-stopped` policy restarts the monitor after a crash or VPS reboot. Listing state is stored as `data/listings.json` in the `marketplace-alerts-data` Docker volume and survives container rebuilds and `docker compose down`.
+The `restart: unless-stopped` policy restarts the monitor after a crash or VPS reboot. The host directory `./data` is mounted at `/app/data`, so `data/listings.json` and Vinted cookies remain directly visible on the VPS after container rebuilds, removal, and `docker compose down`.
 
-Do not use `docker compose down -v` unless you intentionally want to delete the seen-listing history. Losing that volume resets duplicate protection.
+The `data/` directory is gitignored. Back it up like any other local database. `docker compose down -v` does not remove this bind-mounted directory, but deleting `data/listings.json` resets duplicate protection.
 
-Run only one container for a given configuration and state file. Scaling the service into replicas can cause duplicate Telegram notifications. If you need separate monitors, use separate Compose projects, configurations, and volumes.
+Run only one container for a given configuration and state file. Scaling the service into replicas can cause duplicate Telegram notifications. If you need separate monitors, use separate Compose projects, configurations, and data directories.
+
+### One-time migration from the former Docker volume
+
+If the VPS already has history in the old `marketplace-alerts-data` named volume, copy it before starting this bind-mounted version:
+
+```bash
+docker compose down
+mkdir -p data
+OLD_VOLUME="$(docker volume ls --format '{{.Name}}' | grep 'marketplace-alerts-data$' | head -n1)"
+test -n "$OLD_VOLUME"
+docker run --rm --user 0 \
+  -v "$OLD_VOLUME:/source:ro" \
+  -v "$PWD/data:/target" \
+  marketplace-alerts:latest sh -c 'cp -a /source/. /target/'
+sudo chown -R 10001:10001 data
+```
+
+Confirm that `data/listings.json` exists before running `docker compose up -d --build`. Do not delete the old named volume until the migrated service logs the expected tracked-ID count.
 
 ## Run
 
@@ -158,15 +178,24 @@ Stop continuous mode with `Ctrl+C`. Use `python -m listing_monitor --help` to se
 
 ## Duplicate protection
 
-Each listing is identified by its source, marketplace, and native listing ID. That compound ID is included in its Telegram post and used as the key in `data/listings.json`.
+Each product is identified by its source and native product ID. The ID is included in its Telegram post and stored under a key such as `vinted:9334396545` in `data/listings.json`; the regional domain, title, URL, and search name do not affect duplicate detection.
 
-The JSON file is durable storage, while Python dictionaries and sets are built from it at startup for average O(1) ID checks. The monitor records every listing returned by a marketplace, not only matches. Successful Telegram sends are persisted immediately, and other state changes are saved after each search using an atomic file replacement. The same native item ID is also suppressed across regional domains of one marketplace source. A failed send is deliberately left eligible for retry.
+The JSON file is durable storage, while its top-level `products` dictionary and an in-memory set provide average O(1) product-ID checks. The monitor records every product returned by a marketplace, not only matches. Each record retains searchable listing metadata such as title, URL, price, description, images, listing time, seller, attributes, searches, marketplaces, and first/last seen times. Successful Telegram sends are persisted immediately, and other state changes are saved after each search using an atomic file replacement. A failed send is deliberately left eligible for retry.
+
+Inspect the local database directly on the VPS:
+
+```bash
+jq '.products | length' data/listings.json
+jq '.products["vinted:9334396545"]' data/listings.json
+```
+
+If `jq` is unavailable, `python3 -m json.tool data/listings.json` provides a readable view.
 
 Marketplace result pages must be checked again to discover new IDs, but previously handled listings are not fetched in detail or posted again. Searches with identical marketplace parameters also share one response during a polling cycle.
 
 When `send_existing_on_start` is `false`, the first successful scan records existing matches without flooding Telegram. Only later listings are posted.
 
-If an older `data/listings.sqlite3` database exists and the JSON file does not, its duplicate and initialization history is imported automatically on first startup. Keep both files and the Docker volume intact until that first migrated run completes.
+Version-1 JSON state is automatically consolidated into the product-ID index. If an older `data/listings.sqlite3` database exists and the JSON file does not, its duplicate and initialization history is imported automatically on first startup. Keep the state files intact until the migrated run completes.
 
 ## English translation
 

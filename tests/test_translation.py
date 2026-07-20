@@ -11,6 +11,7 @@ def test_common_marketplace_conditions_translate_offline():
     assert translate_condition("Très bon état") == "Very good"
     assert translate_condition("Neu mit Etikett") == "New with tags"
     assert translate_condition("Zeer goed") == "Very good"
+    assert translate_condition("Muito bom") == "Very good"
     assert translate_condition("Unknown condition") == "Unknown condition"
 
 

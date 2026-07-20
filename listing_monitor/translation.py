@@ -47,6 +47,11 @@ CONDITION_TRANSLATIONS = {
         "Zeer goed": "Very good",
         "Goed": "Good",
         "Redelijk": "Satisfactory",
+        "Novo com etiquetas": "New with tags",
+        "Novo sem etiquetas": "New without tags",
+        "Muito bom": "Very good",
+        "Bom": "Good",
+        "Satisfat\u00f3rio": "Satisfactory",
     }.items()
 }
 

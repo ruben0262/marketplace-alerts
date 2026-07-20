@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from decimal import Decimal
 from pathlib import Path
 
 from listing_monitor.models import Listing
@@ -9,9 +10,23 @@ from listing_monitor.state import StateStore
 def test_json_state_round_trip_and_indexes(tmp_path: Path):
     path = tmp_path / "listings.json"
     store = StateStore(path)
-    item = Listing("ebay", "EBAY_GB", "123", "Title", "https://example.test")
-    store.track_discovered([item])
-    assert item.key in store.items
+    item = Listing(
+        "ebay",
+        "EBAY_GB",
+        "123",
+        "Title",
+        "https://example.test",
+        price=Decimal("25.50"),
+        currency="GBP",
+        description="Black hoodie",
+        image_urls=["https://example.test/image.jpg"],
+        search_name="Boxraw tops",
+        attributes={"Brand": "Boxraw", "Size": "XL"},
+    )
+    assert store.track_discovered([item]) == 1
+    assert store.track_discovered([item]) == 0
+    product_key = StateStore.product_key(item.source, item.listing_id)
+    assert product_key in store.products
     assert not store.is_initialized("ebay:test")
     assert not store.is_seen(item.key)
     assert not store.is_processed("ebay:test", item.key)
@@ -21,8 +36,12 @@ def test_json_state_round_trip_and_indexes(tmp_path: Path):
     store.close()
 
     payload = json.loads(path.read_text(encoding="utf-8"))
-    assert payload["version"] == 1
-    assert payload["items"][item.key]["handled"] is True
+    assert payload["version"] == 2
+    assert payload["products"][product_key]["handled"] is True
+    assert payload["products"][product_key]["product_id"] == "123"
+    assert payload["products"][product_key]["price"] == "25.50"
+    assert payload["products"][product_key]["attributes"]["Size"] == "XL"
+    assert payload["products"][product_key]["searches"] == ["Boxraw tops"]
     assert not path.with_name("listings.json.tmp").exists()
 
     reopened = StateStore(path)
@@ -30,6 +49,67 @@ def test_json_state_round_trip_and_indexes(tmp_path: Path):
     assert reopened.is_processed("ebay:test", item.key)
     assert reopened.is_initialized("ebay:test")
     reopened.close()
+
+
+def test_regional_results_share_one_product_id_record(tmp_path: Path):
+    path = tmp_path / "listings.json"
+    store = StateStore(path)
+    french = Listing("vinted", "www.vinted.fr", "123", "Title", "https://example.test/fr")
+    italian = Listing("vinted", "www.vinted.it", "123", "Title", "https://example.test/it")
+
+    assert store.track_discovered([french, italian]) == 1
+    store.close()
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert list(payload["products"]) == ["vinted:123"]
+    assert payload["products"]["vinted:123"]["marketplaces"] == [
+        "www.vinted.fr",
+        "www.vinted.it",
+    ]
+
+
+def test_version_one_json_is_migrated_to_product_id_index(tmp_path: Path):
+    path = tmp_path / "listings.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "items": {
+                    "vinted:www.vinted.fr:123": {
+                        "source": "vinted",
+                        "marketplace": "www.vinted.fr",
+                        "listing_id": "123",
+                        "first_seen_at": "2026-07-20T10:00:00+00:00",
+                        "handled": True,
+                        "sent_at": "2026-07-20T10:01:00+00:00",
+                    },
+                    "vinted:www.vinted.it:123": {
+                        "source": "vinted",
+                        "marketplace": "www.vinted.it",
+                        "listing_id": "123",
+                        "first_seen_at": "2026-07-20T10:02:00+00:00",
+                        "handled": False,
+                        "sent_at": None,
+                    },
+                },
+                "initialized_scopes": [],
+                "processed_by_scope": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    store = StateStore(path)
+    item = Listing("vinted", "www.vinted.es", "123", "Title", "https://example.test")
+    assert store.is_listing_seen(item)
+    assert len(store.products) == 1
+    store.close()
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    record = payload["products"]["vinted:123"]
+    assert payload["version"] == 2
+    assert record["handled"] is True
+    assert record["marketplaces"] == ["www.vinted.fr", "www.vinted.it"]
 
 
 def test_sqlite_history_is_migrated_without_losing_duplicate_protection(tmp_path: Path):

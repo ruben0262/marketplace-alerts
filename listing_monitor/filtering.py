@@ -28,6 +28,7 @@ SIZE_ATTRIBUTE_NAMES = {
     "talla",
     "taglia",
     "maat",
+    "tamanho",
 }
 SIZE_ALIASES = {
     "small": "s",

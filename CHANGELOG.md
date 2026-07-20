@@ -6,6 +6,11 @@ All notable changes to this project are documented here. This project follows [K
 
 ### Added
 
+- Host-visible `./data` bind mount for persistent, directly searchable VPS JSON state, plus
+  complete observed listing metadata in each product-ID record.
+- Product-ID-first JSON state schema with automatic version-1 migration and one durable record
+  per source/native ID, regardless of regional domain, URL, title, or search.
+- Vinted Spain, Italy, the Netherlands, Belgium, and Portugal in the public and private configs.
 - Case/space/punctuation-insensitive size filtering with localized marketplace field names,
   plus native-ID deduplication across regional domains of the same source.
 - Deterministic search fingerprints so initialization state remains stable across restarts.

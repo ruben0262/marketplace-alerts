@@ -44,6 +44,18 @@ sources:
         name: Vinted France
       - url: https://www.vinted.de
         name: Vinted Germany
+      - url: https://www.vinted.es
+        name: Vinted Spain
+      - url: https://www.vinted.it
+        name: Vinted Italy
+      - url: https://www.vinted.nl
+        name: Vinted Netherlands
+      - url: https://www.vinted.be
+        name: Vinted Belgium
+      - url: https://www.vinted.pt
+        name: Vinted Portugal
+      - url: https://www.vinted.hu
+        name: Vinted Hungary
     pages_per_search: 2
     results_per_page: 40
     fetch_item_details: true
