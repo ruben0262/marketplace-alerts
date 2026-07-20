@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from listing_monitor.config import SearchConfig
-from listing_monitor.filtering import matches_search, normalize_brand
+from listing_monitor.filtering import matches_search, normalize_brand, normalize_size
 from listing_monitor.models import Listing
 
 
@@ -98,8 +98,18 @@ def test_excluded_sizes_use_structured_exact_labels():
     assert matches_search(listing(attributes={"Size": "XXS"}), search)
 
 
+def test_excluded_sizes_ignore_case_spaces_punctuation_and_localized_field_names():
+    search = SearchConfig(name="sizes", query="boxraw", excluded_sizes=[" XS ", " S "])
+    assert normalize_size(" X - Small ") == "xs"
+    assert not matches_search(listing(attributes={"Taille": " X S / 34 / 6 "}), search)
+    assert not matches_search(listing(attributes={"Gr\u00f6\u00dfe": " SMALL "}), search)
+    assert not matches_search(listing(attributes={"Talla": "s-m"}), search)
+    assert matches_search(listing(attributes={"Taglia": "XXS"}), search)
+
+
 def test_size_fallback_avoids_substrings_and_possessives():
     search = SearchConfig(name="sizes", query="boxraw", excluded_sizes=["xs", "s"])
     assert not matches_search(listing(title="Boxraw hoodie XS", attributes={}), search)
     assert not matches_search(listing(title="Boxraw hoodie S", attributes={}), search)
+    assert not matches_search(listing(title="Boxraw hoodie size X S", attributes={}), search)
     assert matches_search(listing(title="Men's Boxraw shorts", attributes={}), search)

@@ -160,7 +160,7 @@ Stop continuous mode with `Ctrl+C`. Use `python -m listing_monitor --help` to se
 
 Each listing is identified by its source, marketplace, and native listing ID. That compound ID is included in its Telegram post and used as the key in `data/listings.json`.
 
-The JSON file is durable storage, while Python dictionaries and sets are built from it at startup for average O(1) ID checks. The monitor records every listing returned by a marketplace, not only matches. Successful Telegram sends are persisted immediately, and other state changes are saved after each search using an atomic file replacement. A failed send is deliberately left eligible for retry.
+The JSON file is durable storage, while Python dictionaries and sets are built from it at startup for average O(1) ID checks. The monitor records every listing returned by a marketplace, not only matches. Successful Telegram sends are persisted immediately, and other state changes are saved after each search using an atomic file replacement. The same native item ID is also suppressed across regional domains of one marketplace source. A failed send is deliberately left eligible for retry.
 
 Marketplace result pages must be checked again to discover new IDs, but previously handled listings are not fetched in detail or posted again. Searches with identical marketplace parameters also share one response during a polling cycle.
 
@@ -197,9 +197,10 @@ Each search in `config.yaml` supports:
 Filtering checks the title, description, and available attributes such as brand, size, and colour.
 When `required_brands` is set, a structured marketplace brand must match one configured value exactly after normalization. If a marketplace provides no brand attribute, matching falls back to the normalized title and description.
 
-`excluded_sizes` uses complete labels rather than substring matching, so excluding `s` does not
-reject words such as `shorts` or possessives such as `men's`. Add marketplace aliases such as
-`xs`, `x-small`, `extra small`, `s`, and `small` when all those forms should be rejected.
+`excluded_sizes` compares lowercase canonical labels while ignoring spaces and punctuation. It
+recognizes common localized size fields and aliases, so `XS`, `X S`, `x-small`, `extra small`,
+`S`, and `small` can be rejected without matching letters inside words such as `shorts` or
+possessives such as `men's`.
 
 Marketplace searches and Telegram delivery are ordered newest-first. Increase `pages_per_search` to backfill older results; adapters stop early when a page is not full. Use `max_age_hours: null` if old listings should remain eligible. Setting `send_existing_on_start: true` sends matching backfill results the first time a search runs, so use it carefully.
 

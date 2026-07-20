@@ -1,9 +1,17 @@
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
-from listing_monitor.config import AppConfig, SearchConfig, VintedConfig, VintedSite
+from listing_monitor.config import (
+    AppConfig,
+    EbayConfig,
+    EbayMarketplace,
+    SearchConfig,
+    VintedConfig,
+    VintedSite,
+)
 from listing_monitor.marketplaces.base import MarketplaceUnavailableError
 from listing_monitor.marketplaces.ebay import EbayAdapter
 from listing_monitor.marketplaces.vinted import VintedAdapter
@@ -30,6 +38,27 @@ def test_ebay_parser():
     assert len(parsed.image_urls) == 2
     assert parsed.created_at is not None
     assert parsed.attributes["Condition"] == "Pre-owned - Good"
+
+
+@pytest.mark.asyncio
+async def test_ebay_search_requests_newly_listed_order():
+    adapter = EbayAdapter(
+        EbayConfig(
+            enabled=True,
+            marketplaces=[EbayMarketplace("EBAY_GB", "GB")],
+            pages_per_search=1,
+            results_per_page=10,
+        ),
+        AppConfig(request_retries=1),
+        "test",
+    )
+    adapter._access_token = AsyncMock(return_value="token")
+    adapter.http.request_json = AsyncMock(return_value={"itemSummaries": []})
+
+    await adapter.search(SearchConfig(name="latest", query="boxraw"))
+
+    assert adapter.http.request_json.await_args.kwargs["params"]["sort"] == "newlyListed"
+    await adapter.close()
 
 
 def test_vinted_parser_accepts_relative_url_and_scalar_price():

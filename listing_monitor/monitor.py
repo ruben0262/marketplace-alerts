@@ -104,7 +104,7 @@ class Monitor:
         listings.sort(key=lambda item: item.created_at or self._minimum_datetime(), reverse=True)
         match_count = 0
         for listing in listings:
-            if self.state.is_seen(listing.key):
+            if self.state.is_listing_seen(listing):
                 if not self.dry_run:
                     self.state.mark_processed(scope, listing.key)
                 continue
@@ -147,7 +147,23 @@ class Monitor:
 
     @staticmethod
     def _scope(source: str, search: SearchConfig) -> str:
-        digest = hashlib.sha256(f"{source}:{search!r}".encode()).hexdigest()[:16]
+        payload = (
+            source,
+            search.name,
+            search.query,
+            tuple(sorted(search.sources)),
+            search.max_age_hours,
+            str(search.min_price) if search.min_price is not None else None,
+            str(search.max_price) if search.max_price is not None else None,
+            tuple(search.required_brands),
+            tuple(search.excluded_sizes),
+            tuple(search.include_keywords),
+            tuple(tuple(group) for group in search.include_any_groups),
+            tuple(search.exclude_keywords),
+            tuple(search.ebay_category_ids),
+            tuple(search.vinted_catalog_ids),
+        )
+        digest = hashlib.sha256(repr(payload).encode()).hexdigest()[:16]
         return f"{source}:{digest}"
 
     @staticmethod

@@ -19,31 +19,66 @@ def normalize_brand(value: str) -> str:
     return "".join(character for character in normalized if character.isalnum())
 
 
-def _contains_size(value: str, size: str) -> bool:
-    """Match a size label without treating possessive endings such as men's as size S."""
-    normalized_value = value.casefold().replace("-", " ")
-    normalized_size = size.casefold().replace("-", " ")
-    return (
-        re.search(
-            rf"(?<![\w'’]){re.escape(normalized_size)}(?!\w)",
-            normalized_value,
-        )
-        is not None
+SIZE_ATTRIBUTE_NAMES = {
+    "size",
+    "taille",
+    "gro\u00dfe",
+    "grosse",
+    "groesse",
+    "talla",
+    "taglia",
+    "maat",
+}
+SIZE_ALIASES = {
+    "small": "s",
+    "xsmall": "xs",
+    "extrasmall": "xs",
+}
+
+
+def normalize_size(value: str) -> str:
+    """Normalize a size label for case/space/punctuation-insensitive comparison."""
+    decomposed = unicodedata.normalize("NFKD", value.casefold())
+    compact = "".join(
+        character
+        for character in decomposed
+        if character.isalnum() and not unicodedata.combining(character)
     )
+    return SIZE_ALIASES.get(compact, compact)
+
+
+def _size_candidates(value: str) -> set[str]:
+    """Return complete size tokens without matching letters inside ordinary words."""
+    decomposed = unicodedata.normalize("NFKD", value.casefold())
+    normalized = "".join(
+        character for character in decomposed if not unicodedata.combining(character)
+    )
+    # Prevent possessive/contraction endings in "men's" and "it's" becoming size S.
+    normalized = re.sub(r"(?<=\w)['\u2019]s\b", "", normalized)
+    tokens = re.findall(r"[a-z0-9]+", normalized)
+    candidates = {normalize_size(token) for token in tokens}
+    # Join nearby tokens so X S, X-Small, and Extra Small compare like xs.
+    for width in (2, 3):
+        candidates.update(
+            normalize_size("".join(tokens[index : index + width]))
+            for index in range(len(tokens) - width + 1)
+        )
+    candidates.add(normalize_size(normalized))
+    candidates.discard("")
+    return candidates
 
 
 def matches_excluded_sizes(listing: Listing, search: SearchConfig) -> bool:
     if not search.excluded_sizes:
         return True
+    excluded = {normalize_size(size) for size in search.excluded_sizes}
     structured_sizes = [
         value
         for name, value in listing.attributes.items()
-        if normalize_brand(name) == "size" and value
+        if normalize_brand(name) in SIZE_ATTRIBUTE_NAMES and value
     ]
     values = structured_sizes or [f"{listing.title}\n{listing.description}"]
-    return not any(
-        _contains_size(value, excluded) for value in values for excluded in search.excluded_sizes
-    )
+    return not any(_size_candidates(value) & excluded for value in values)
 
 
 def matches_required_brand(

@@ -6,6 +6,9 @@ All notable changes to this project are documented here. This project follows [K
 
 ### Added
 
+- Case/space/punctuation-insensitive size filtering with localized marketplace field names,
+  plus native-ID deduplication across regional domains of the same source.
+- Deterministic search fingerprints so initialization state remains stable across restarts.
 - Atomic JSON listing history with in-memory set/dictionary indexes for fast duplicate checks,
   including every discovered item and automatic migration from the former SQLite database.
 - Offline English translations for common European condition labels and optional DeepL

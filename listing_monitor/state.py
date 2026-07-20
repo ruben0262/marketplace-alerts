@@ -22,6 +22,7 @@ class StateStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.items: dict[str, dict[str, Any]] = {}
         self._handled: set[str] = set()
+        self._handled_products: set[str] = set()
         self._initialized: set[str] = set()
         self._processed: dict[str, set[str]] = {}
         self._dirty = False
@@ -58,6 +59,11 @@ class StateStore:
         self._handled = {
             key for key, value in self.items.items() if bool(value.get("handled", False))
         }
+        self._handled_products = {
+            self._product_key(str(value.get("source", "")), str(value.get("listing_id", "")))
+            for value in self.items.values()
+            if bool(value.get("handled", False)) and value.get("source") and value.get("listing_id")
+        }
         self._initialized = {str(scope) for scope in initialized}
         self._processed = {
             str(scope): {str(key) for key in keys} for scope, keys in processed.items()
@@ -90,6 +96,7 @@ class StateStore:
                         "sent_at": sent_at,
                     }
                     self._handled.add(str(key))
+                    self._handled_products.add(self._product_key(str(source), str(listing_id)))
             if self._table_exists(connection, "processed_listings"):
                 rows = connection.execute("SELECT scope, listing_key FROM processed_listings")
                 for scope, key in rows:
@@ -130,6 +137,14 @@ class StateStore:
     def is_seen(self, key: str) -> bool:
         return key in self._handled
 
+    @staticmethod
+    def _product_key(source: str, listing_id: str) -> str:
+        return f"{source.casefold()}:{listing_id.casefold()}"
+
+    def is_listing_seen(self, listing: Listing) -> bool:
+        """Check a native item once across regional domains of the same source."""
+        return self._product_key(listing.source, listing.listing_id) in self._handled_products
+
     def is_processed(self, scope: str, key: str) -> bool:
         return key in self._processed.get(scope, set())
 
@@ -156,6 +171,7 @@ class StateStore:
         if sent and not record.get("sent_at"):
             record["sent_at"] = now
         self._handled.add(listing.key)
+        self._handled_products.add(self._product_key(listing.source, listing.listing_id))
         self._dirty = True
         # A successful Telegram send is persisted immediately to prevent restart duplicates.
         self.flush()

@@ -69,6 +69,14 @@ def make_config(database: Path, *, send_existing: bool = False):
     )
 
 
+def test_search_scope_is_stable_for_equivalent_source_sets(tmp_path: Path):
+    first = make_config(tmp_path / "first.json").searches[0]
+    second = make_config(tmp_path / "second.json").searches[0]
+    first.sources = set(["vinted", "ebay"])
+    second.sources = set(["ebay", "vinted"])
+    assert Monitor._scope("ebay", first) == Monitor._scope("ebay", second)
+
+
 @pytest.mark.asyncio
 async def test_dry_run_does_not_change_state(tmp_path: Path):
     item = Listing("ebay", "EBAY_GB", "1", "Jacket", "https://example.test/1")
@@ -120,6 +128,28 @@ async def test_successful_send_is_not_repeated_after_restart(tmp_path: Path):
     second_monitor = Monitor(config, [FakeAdapter([item])], second_publisher, second_state)
     await second_monitor.poll_once()
     second_state.close()
+    assert second_publisher.sent == []
+
+
+@pytest.mark.asyncio
+async def test_same_native_item_is_sent_once_across_regions_and_restart(tmp_path: Path):
+    uk_item = Listing("ebay", "EBAY_GB", "123", "Jacket", "https://example.test/gb/123")
+    de_item = Listing("ebay", "EBAY_DE", "123", "Jacket", "https://example.test/de/123")
+    config = make_config(tmp_path / "state.json", send_existing=True)
+    first_state = StateStore(config.app.state_file)
+    first_publisher = FakePublisher()
+    first_monitor = Monitor(config, [FakeAdapter([uk_item])], first_publisher, first_state)
+
+    await first_monitor.poll_once()
+    first_state.close()
+
+    second_state = StateStore(config.app.state_file)
+    second_publisher = FakePublisher()
+    second_monitor = Monitor(config, [FakeAdapter([de_item])], second_publisher, second_state)
+    await second_monitor.poll_once()
+    second_state.close()
+
+    assert first_publisher.sent == [uk_item]
     assert second_publisher.sent == []
 
 
