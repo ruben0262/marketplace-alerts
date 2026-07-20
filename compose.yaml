@@ -1,0 +1,20 @@
+services:
+  marketplace-alerts:
+    build: .
+    image: marketplace-alerts:latest
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - marketplace-alerts-data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  marketplace-alerts-data:
+

@@ -1,0 +1,63 @@
+app:
+  poll_interval_seconds: 60
+  request_timeout_seconds: 20
+  request_retries: 3
+  state_db: data/listings.sqlite3
+  # false seeds the database on the first successful run without flooding Telegram.
+  send_existing_on_start: false
+  # Add a small random delay between cycles so several installations do not synchronize.
+  poll_jitter_seconds: 5
+
+telegram:
+  max_images: 5
+  disable_notification: false
+
+sources:
+  ebay:
+    # Enable after adding eBay credentials to .env.
+    enabled: false
+    marketplaces:
+      - id: EBAY_GB
+        delivery_country: GB
+      - id: EBAY_DE
+        delivery_country: DE
+    pages_per_search: 3
+    results_per_page: 50
+
+  # Vinted has no supported public developer API. This adapter uses the web catalog
+  # endpoint and may need maintenance if Vinted changes it. Keep polling considerate.
+  vinted:
+    enabled: true
+    sites:
+      - url: https://www.vinted.co.uk
+        name: Vinted UK
+      - url: https://www.vinted.fr
+        name: Vinted France
+      - url: https://www.vinted.de
+        name: Vinted Germany
+    pages_per_search: 2
+    results_per_page: 40
+    fetch_item_details: true
+
+searches:
+  - name: Example apparel search
+    query: example brand
+    sources: [ebay, vinted]
+    max_age_hours: 24
+    min_price: 5
+    max_price: 250
+    include_keywords: []
+    # Every group must match at least one phrase. This example is intentionally empty.
+    # include_any_groups:
+    #   - [xl, xxl]
+    #   - [t-shirt, hoodie, sweatshirt]
+    exclude_keywords: [poster, sticker]
+    # Optional source-specific category filters:
+    ebay_category_ids: []
+    vinted_catalog_ids: []
+
+  - name: Example exact product
+    query: "boxing tracksuit"
+    sources: [ebay, vinted]
+    max_age_hours: 12
+    max_price: 150
