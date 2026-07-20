@@ -185,3 +185,35 @@ async def test_vinted_enrichment_delegates_current_detail_lookup(tmp_path: Path)
     assert listing.attributes["Brand"] == "Example Brand"
     assert listing.attributes["Size"] == "XL"
     await adapter.close()
+
+
+@pytest.mark.asyncio
+async def test_vinted_enrichment_cools_down_after_one_failure(tmp_path: Path):
+    site = VintedSite("https://www.vinted.test", "Test Vinted")
+    config = VintedConfig(
+        enabled=True,
+        sites=[site],
+        cookies_dir=tmp_path,
+        retry_cooldown_seconds=900,
+    )
+    adapter = VintedAdapter(config, AppConfig(), "unused")
+    client = FakeVintedClient(error=RuntimeError("blocked"))
+    adapter._clients[site.url] = client
+    listing = VintedAdapter._parse_item(
+        {
+            "id": 42,
+            "title": "Example hoodie",
+            "url": "/items/42-example-hoodie",
+            "price": {"amount": "25", "currency_code": "EUR"},
+        },
+        "www.vinted.test",
+        "hoodies",
+        site.url,
+    )
+    assert listing is not None
+
+    await adapter.enrich(listing)
+    await adapter.enrich(listing)
+
+    assert len(client.detail_calls) == 1
+    await adapter.close()

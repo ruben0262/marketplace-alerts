@@ -3,11 +3,20 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import re
 from typing import Any
 
 import httpx
 
 LOGGER = logging.getLogger(__name__)
+TELEGRAM_TOKEN_PATTERN = re.compile(r"(https://api\.telegram\.org/bot)[^/\s\"']+", re.IGNORECASE)
+URL_CREDENTIALS_PATTERN = re.compile(r"(https?://)[^/@\s\"']+@", re.IGNORECASE)
+
+
+def redact_sensitive_text(value: str) -> str:
+    """Remove credentials commonly embedded in request URLs before logging."""
+    redacted = TELEGRAM_TOKEN_PATTERN.sub(r"\1<redacted>", value)
+    return URL_CREDENTIALS_PATTERN.sub(r"\1<redacted>@", redacted)
 
 
 class HttpClient:
@@ -39,6 +48,10 @@ class HttpClient:
                 if attempt == self.retries:
                     raise
                 delay = min(2 ** (attempt - 1), 8) + random.uniform(0, 0.5)
-                LOGGER.warning("Request failed (%s); retrying in %.1fs", exc, delay)
+                LOGGER.warning(
+                    "Request failed (%s); retrying in %.1fs",
+                    redact_sensitive_text(str(exc)),
+                    delay,
+                )
                 await asyncio.sleep(delay)
         raise RuntimeError("unreachable")

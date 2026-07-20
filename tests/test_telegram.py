@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+from listing_monitor.http_client import redact_sensitive_text
 from listing_monitor.models import Listing
 from listing_monitor.telegram import format_caption, format_relative_age
 
@@ -31,3 +32,15 @@ def test_relative_listing_age_uses_readable_units():
     assert format_relative_age(now - timedelta(hours=3), now=now) == "3 hours ago"
     assert format_relative_age(now - timedelta(days=2), now=now) == "2 days ago"
     assert format_relative_age(now - timedelta(days=14), now=now) == "2 weeks ago"
+
+
+def test_log_redaction_hides_embedded_credentials():
+    message = (
+        "POST https://api.telegram.org/bot123456:synthetic-secret/sendPhoto "
+        "through http://proxy-user:proxy-secret@proxy.test:8080"
+    )
+    redacted = redact_sensitive_text(message)
+    assert "synthetic-secret" not in redacted
+    assert "proxy-secret" not in redacted
+    assert "bot<redacted>/sendPhoto" in redacted
+    assert "http://<redacted>@proxy.test:8080" in redacted

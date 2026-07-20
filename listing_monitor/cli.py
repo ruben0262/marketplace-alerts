@@ -9,10 +9,18 @@ from dotenv import load_dotenv
 
 from . import __version__
 from .config import ConfigError, load_config, validate_delivery_config
+from .http_client import redact_sensitive_text
 from .marketplaces import EbayAdapter, VintedAdapter
 from .monitor import Monitor
 from .state import StateStore
 from .telegram import TelegramPublisher
+
+
+class RedactingFormatter(logging.Formatter):
+    """Redact credentials from complete log records, including exception tracebacks."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return redact_sensitive_text(super().format(record))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -70,10 +78,16 @@ async def _run(args: argparse.Namespace) -> None:
 
 def main() -> None:
     args = build_parser().parse_args()
+    handler = logging.StreamHandler()
+    handler.setFormatter(RedactingFormatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     logging.basicConfig(
         level=getattr(logging, args.log_level),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        handlers=[handler],
+        force=True,
     )
+    # httpx logs full request URLs at INFO, including Telegram's token-bearing path.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     try:
         asyncio.run(_run(args))
     except ConfigError as exc:

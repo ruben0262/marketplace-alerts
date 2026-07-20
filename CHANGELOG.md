@@ -6,6 +6,7 @@ All notable changes to this project are documented here. This project follows [K
 
 ### Added
 
+- Credential redaction for Telegram request URLs and URL-embedded proxy authentication.
 - Browser-compatible Vinted sessions, persistent anonymous cookies, optional proxy support,
   and per-site failure cooldowns for VPS deployments.
 - Current Vinted item-detail lookups, replacing the obsolete endpoint that returned HTTP 404.
@@ -20,6 +21,8 @@ All notable changes to this project are documented here. This project follows [K
 
 ### Changed
 
+- Vinted item-detail failures now enter a per-site cooldown while catalog alerts continue.
+- Noisy `httpx` INFO request logs are suppressed so Telegram bot tokens are not printed.
 - Expected marketplace outages now produce one concise warning per cycle instead of a traceback
   for every configured search.
 - Marketplace results are processed newest-first, with deeper backfill controlled by page settings.

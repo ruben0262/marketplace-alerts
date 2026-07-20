@@ -24,6 +24,7 @@ class VintedAdapter:
         self.config = config
         self._clients: dict[str, VintedClient] = {}
         self._unavailable_until: dict[str, float] = {}
+        self._details_unavailable_until: dict[str, float] = {}
 
     async def close(self) -> None:
         await asyncio.gather(
@@ -129,13 +130,24 @@ class VintedAdapter:
         site = next((item for item in self.config.sites if item.url == base_url), None)
         if site is None:
             return
+        if self._details_unavailable_until.get(site.url, 0) > time.monotonic():
+            return
         try:
             item = await self._client(site).item_details(listing.url, raw_data=True)
         except Exception as exc:
+            self._details_unavailable_until[site.url] = (
+                time.monotonic() + self.config.retry_cooldown_seconds
+            )
             status = getattr(exc, "status_code", None)
             reason = f"HTTP {status}" if status else type(exc).__name__
-            LOGGER.debug("Vinted detail lookup failed for %s (%s)", listing.key, reason)
+            LOGGER.warning(
+                "%s item details unavailable (%s); using catalog data for %d seconds",
+                site.name,
+                reason,
+                self.config.retry_cooldown_seconds,
+            )
             return
+        self._details_unavailable_until.pop(site.url, None)
         if not isinstance(item, dict):
             return
         listing.description = str(item.get("description", ""))

@@ -204,6 +204,12 @@ CAPTCHA. The official
 [Vinted Pro Integrations API](https://pro-docs.svc.vinted.com/) manages a Pro seller's own inventory
 and webhooks; it does not provide public catalog discovery for this monitor.
 
+Use a sticky residential proxy session when possible. If the proxy changes its exit IP between the
+cookie refresh and catalog/detail request, Vinted may reject the session. When item-detail access
+fails, the monitor pauses detail lookups for that site and continues posting the catalog title,
+price, image, brand, size, and link. Set `fetch_item_details: false` to disable descriptions and
+extra-image lookups completely while keeping catalog alerts.
+
 To check only Vinted connectivity without posting or changing deduplication state:
 
 ```powershell
@@ -228,6 +234,9 @@ git diff --cached
 ```
 
 Revoke a credential immediately if it is exposed.
+
+The application suppresses `httpx` request logs and redacts Telegram tokens and URL-embedded proxy
+credentials from formatted logs. Logs should still be handled as potentially sensitive.
 
 ## License
 
