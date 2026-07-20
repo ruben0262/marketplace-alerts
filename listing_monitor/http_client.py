@@ -19,6 +19,27 @@ def redact_sensitive_text(value: str) -> str:
     return URL_CREDENTIALS_PATTERN.sub(r"\1<redacted>@", redacted)
 
 
+def retry_after_seconds(response: httpx.Response) -> float | None:
+    """Read a numeric retry delay from a standard header or Telegram response body."""
+    candidates: list[Any] = [response.headers.get("Retry-After")]
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict):
+        parameters = payload.get("parameters")
+        if isinstance(parameters, dict):
+            candidates.append(parameters.get("retry_after"))
+    for candidate in candidates:
+        try:
+            delay = float(candidate)
+        except (TypeError, ValueError):
+            continue
+        if delay >= 0:
+            return delay
+    return None
+
+
 class HttpClient:
     """Small async JSON client with bounded retries for transient failures."""
 
@@ -37,14 +58,27 @@ class HttpClient:
         for attempt in range(1, self.retries + 1):
             try:
                 response = await self.client.request(method, url, **kwargs)
-                if response.status_code == 429 or response.status_code >= 500:
-                    response.raise_for_status()
                 response.raise_for_status()
                 payload = response.json()
                 if not isinstance(payload, dict):
                     raise ValueError(f"Expected JSON object from {url}")
                 return payload
-            except (httpx.HTTPError, ValueError) as exc:
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                if status != 429 and status < 500:
+                    raise
+                if attempt == self.retries:
+                    raise
+                required_delay = retry_after_seconds(exc.response) if status == 429 else None
+                delay = max(required_delay or 0, min(2 ** (attempt - 1), 8))
+                delay += random.uniform(0, 0.5)
+                LOGGER.warning(
+                    "Request failed (%s); retrying in %.1fs",
+                    redact_sensitive_text(str(exc)),
+                    delay,
+                )
+                await asyncio.sleep(delay)
+            except (httpx.RequestError, ValueError) as exc:
                 if attempt == self.retries:
                     raise
                 delay = min(2 ** (attempt - 1), 8) + random.uniform(0, 0.5)

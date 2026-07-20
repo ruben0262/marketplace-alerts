@@ -171,6 +171,7 @@ Each search in `config.yaml` supports:
 - `max_age_hours`: maximum listing age, or `null` to disable
 - `min_price` and `max_price`: optional price range
 - `required_brands`: accepted brands, normalized for case, spaces, and punctuation
+- `excluded_sizes`: exact size labels to reject, using structured size data when available
 - `include_keywords`: every phrase must match
 - `include_any_groups`: one phrase from every group must match
 - `exclude_keywords`: any matching phrase rejects the listing
@@ -179,7 +180,19 @@ Each search in `config.yaml` supports:
 Filtering checks the title, description, and available attributes such as brand, size, and colour.
 When `required_brands` is set, a structured marketplace brand must match one configured value exactly after normalization. If a marketplace provides no brand attribute, matching falls back to the normalized title and description.
 
+`excluded_sizes` uses complete labels rather than substring matching, so excluding `s` does not
+reject words such as `shorts` or possessives such as `men's`. Add marketplace aliases such as
+`xs`, `x-small`, `extra small`, `s`, and `small` when all those forms should be rejected.
+
 Marketplace searches and Telegram delivery are ordered newest-first. Increase `pages_per_search` to backfill older results; adapters stop early when a page is not full. Use `max_age_hours: null` if old listings should remain eligible. Setting `send_existing_on_start: true` sends matching backfill results the first time a search runs, so use it carefully.
+
+## Telegram delivery rate
+
+Telegram recommends avoiding more than one message per second to one chat. The monitor spaces
+delivery using `telegram.min_send_interval_seconds` (default `1.1`) and honors Telegram's
+server-provided `retry_after` delay after HTTP 429 responses. A rate-limited photo is not retried
+immediately as a text message, because that would consume the same limit again. Listings that still
+cannot be delivered remain unseen and are eligible for retry during a later scan.
 
 ## Important Vinted note
 
@@ -209,6 +222,10 @@ cookie refresh and catalog/detail request, Vinted may reject the session. When i
 fails, the monitor pauses detail lookups for that site and continues posting the catalog title,
 price, image, brand, size, and link. Set `fetch_item_details: false` to disable descriptions and
 extra-image lookups completely while keeping catalog alerts.
+
+Anonymous catalog access is sufficient for fresh listing discovery. Account login is intentionally
+not implemented because it adds account and credential risk and is unnecessary while catalog scans
+continue succeeding.
 
 To check only Vinted connectivity without posting or changing deduplication state:
 

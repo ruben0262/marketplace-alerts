@@ -32,6 +32,7 @@ class TelegramConfig:
     chat_id: str
     max_images: int = 5
     disable_notification: bool = False
+    min_send_interval_seconds: float = 1.1
 
 
 @dataclass(slots=True)
@@ -77,6 +78,7 @@ class SearchConfig:
     min_price: Decimal | None = None
     max_price: Decimal | None = None
     required_brands: list[str] = field(default_factory=list)
+    excluded_sizes: list[str] = field(default_factory=list)
     include_keywords: list[str] = field(default_factory=list)
     include_any_groups: list[list[str]] = field(default_factory=list)
     exclude_keywords: list[str] = field(default_factory=list)
@@ -175,6 +177,9 @@ def load_config(path: Path) -> Config:
 
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    min_send_interval = float(telegram_raw.get("min_send_interval_seconds", 1.1))
+    if min_send_interval < 1:
+        raise ConfigError("telegram.min_send_interval_seconds must be at least 1 second")
     telegram = TelegramConfig(
         bot_token=bot_token,
         chat_id=chat_id,
@@ -182,6 +187,7 @@ def load_config(path: Path) -> Config:
             telegram_raw.get("max_images", 5), "telegram.max_images", maximum=10
         ),
         disable_notification=bool(telegram_raw.get("disable_notification", False)),
+        min_send_interval_seconds=min_send_interval,
     )
 
     ebay_enabled = bool(ebay_raw.get("enabled", True))
@@ -265,6 +271,9 @@ def load_config(path: Path) -> Config:
                 max_price=max_price,
                 required_brands=_string_list(
                     entry.get("required_brands", []), f"searches[{index}].required_brands"
+                ),
+                excluded_sizes=_string_list(
+                    entry.get("excluded_sizes", []), f"searches[{index}].excluded_sizes"
                 ),
                 include_keywords=_string_list(
                     entry.get("include_keywords", []), f"searches[{index}].include_keywords"

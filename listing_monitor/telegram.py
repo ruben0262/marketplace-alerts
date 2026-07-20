@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
+import time
 from datetime import UTC, datetime
 from decimal import Decimal
 
 import httpx
 
 from .config import AppConfig, TelegramConfig
-from .http_client import HttpClient
+from .http_client import HttpClient, retry_after_seconds
 from .models import Listing
 
 LOGGER = logging.getLogger(__name__)
@@ -68,7 +70,7 @@ def format_caption(listing: Listing, *, max_length: int = 1024) -> str:
         f"<b>Listing ID:</b> <code>{html.escape(listing.listing_id)}</code>",
         f"<b>Search:</b> {html.escape(listing.search_name)}",
     ]
-    for name in ("Brand", "Size", "Color"):
+    for name in ("Brand", "Size", "Condition", "Color"):
         if value := listing.attributes.get(name):
             fields.append(f"<b>{name}:</b> {html.escape(value)}")
     if listing.created_at:
@@ -93,6 +95,8 @@ class TelegramPublisher:
             user_agent=user_agent,
         )
         self.base_url = f"https://api.telegram.org/bot{config.bot_token}"
+        self._send_lock = asyncio.Lock()
+        self._next_send_at = 0.0
 
     async def close(self) -> None:
         await self.http.close()
@@ -106,12 +110,43 @@ class TelegramPublisher:
                 await self._send_photo(listing, images[0])
             else:
                 await self._send_text(listing)
-        except (httpx.HTTPError, ValueError) as exc:
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 429:
+                raise
             if images:
                 LOGGER.warning("Telegram could not fetch listing image; sending text: %s", exc)
                 await self._send_text(listing)
             else:
                 raise
+        except (httpx.RequestError, ValueError) as exc:
+            if images:
+                LOGGER.warning("Telegram could not fetch listing image; sending text: %s", exc)
+                await self._send_text(listing)
+            else:
+                raise
+
+    async def _request(self, method: str, payload: dict, *, message_count: int = 1) -> None:
+        async with self._send_lock:
+            delay = self._next_send_at - time.monotonic()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            try:
+                await self.http.request_json(
+                    "POST",
+                    f"{self.base_url}/{method}",
+                    json=payload,
+                )
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 429:
+                    retry_after = retry_after_seconds(exc.response)
+                    self._next_send_at = time.monotonic() + max(
+                        retry_after or 0,
+                        self.config.min_send_interval_seconds,
+                    )
+                raise
+            self._next_send_at = time.monotonic() + (
+                self.config.min_send_interval_seconds * max(1, message_count)
+            )
 
     async def _send_album(self, listing: Listing, images: list[str]) -> None:
         media = []
@@ -120,21 +155,20 @@ class TelegramPublisher:
             if index == 0:
                 entry.update({"caption": format_caption(listing), "parse_mode": "HTML"})
             media.append(entry)
-        await self.http.request_json(
-            "POST",
-            f"{self.base_url}/sendMediaGroup",
-            json={
+        await self._request(
+            "sendMediaGroup",
+            {
                 "chat_id": self.config.chat_id,
                 "media": media,
                 "disable_notification": self.config.disable_notification,
             },
+            message_count=len(images),
         )
 
     async def _send_photo(self, listing: Listing, image: str) -> None:
-        await self.http.request_json(
-            "POST",
-            f"{self.base_url}/sendPhoto",
-            json={
+        await self._request(
+            "sendPhoto",
+            {
                 "chat_id": self.config.chat_id,
                 "photo": image,
                 "caption": format_caption(listing),
@@ -144,10 +178,9 @@ class TelegramPublisher:
         )
 
     async def _send_text(self, listing: Listing) -> None:
-        await self.http.request_json(
-            "POST",
-            f"{self.base_url}/sendMessage",
-            json={
+        await self._request(
+            "sendMessage",
+            {
                 "chat_id": self.config.chat_id,
                 "text": format_caption(listing, max_length=4096),
                 "parse_mode": "HTML",

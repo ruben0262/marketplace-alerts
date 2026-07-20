@@ -114,6 +114,8 @@ class EbayAdapter:
             for aspect in item.get("localizedAspects") or []
             if isinstance(aspect, dict) and aspect.get("name") and aspect.get("value")
         }
+        if condition := item.get("condition"):
+            attributes.setdefault("Condition", str(condition))
         return Listing(
             source="ebay",
             marketplace=marketplace,

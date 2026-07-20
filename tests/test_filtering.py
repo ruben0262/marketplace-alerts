@@ -84,3 +84,22 @@ def test_required_brand_falls_back_to_title_when_attribute_is_missing():
     search = SearchConfig(name="brand", query="brand", required_brands=["Box Raw"])
     assert matches_search(listing(title="BOXRAW hoodie", attributes={}), search)
     assert not matches_search(listing(title="Generic hoodie", attributes={}), search)
+
+
+def test_excluded_sizes_use_structured_exact_labels():
+    search = SearchConfig(
+        name="sizes",
+        query="boxraw",
+        excluded_sizes=["xs", "x-small", "extra small", "s", "small"],
+    )
+    assert not matches_search(listing(attributes={"Size": "S / 36 / 8"}), search)
+    assert not matches_search(listing(attributes={"Size": "Extra Small"}), search)
+    assert matches_search(listing(attributes={"Size": "M"}), search)
+    assert matches_search(listing(attributes={"Size": "XXS"}), search)
+
+
+def test_size_fallback_avoids_substrings_and_possessives():
+    search = SearchConfig(name="sizes", query="boxraw", excluded_sizes=["xs", "s"])
+    assert not matches_search(listing(title="Boxraw hoodie XS", attributes={}), search)
+    assert not matches_search(listing(title="Boxraw hoodie S", attributes={}), search)
+    assert matches_search(listing(title="Men's Boxraw shorts", attributes={}), search)

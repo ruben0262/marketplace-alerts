@@ -20,6 +20,7 @@ def test_ebay_parser():
             "additionalImages": [{"imageUrl": "https://img.test/b.jpg"}],
             "itemCreationDate": "2026-01-02T03:04:05.000Z",
             "shortDescription": "A jacket",
+            "condition": "Pre-owned - Good",
         },
         "EBAY_GB",
         "jackets",
@@ -28,6 +29,7 @@ def test_ebay_parser():
     assert str(parsed.price) == "45.99"
     assert len(parsed.image_urls) == 2
     assert parsed.created_at is not None
+    assert parsed.attributes["Condition"] == "Pre-owned - Good"
 
 
 def test_vinted_parser_accepts_relative_url_and_scalar_price():

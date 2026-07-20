@@ -19,6 +19,33 @@ def normalize_brand(value: str) -> str:
     return "".join(character for character in normalized if character.isalnum())
 
 
+def _contains_size(value: str, size: str) -> bool:
+    """Match a size label without treating possessive endings such as men's as size S."""
+    normalized_value = value.casefold().replace("-", " ")
+    normalized_size = size.casefold().replace("-", " ")
+    return (
+        re.search(
+            rf"(?<![\w'’]){re.escape(normalized_size)}(?!\w)",
+            normalized_value,
+        )
+        is not None
+    )
+
+
+def matches_excluded_sizes(listing: Listing, search: SearchConfig) -> bool:
+    if not search.excluded_sizes:
+        return True
+    structured_sizes = [
+        value
+        for name, value in listing.attributes.items()
+        if normalize_brand(name) == "size" and value
+    ]
+    values = structured_sizes or [f"{listing.title}\n{listing.description}"]
+    return not any(
+        _contains_size(value, excluded) for value in values for excluded in search.excluded_sizes
+    )
+
+
 def matches_required_brand(
     listing: Listing, search: SearchConfig, *, fallback_to_text: bool = True
 ) -> bool:
@@ -43,6 +70,8 @@ def matches_search(listing: Listing, search: SearchConfig, *, now: datetime | No
     attributes = "\n".join(f"{name}: {value}" for name, value in listing.attributes.items())
     text = f"{listing.title}\n{listing.description}\n{attributes}".casefold()
     if not matches_required_brand(listing, search):
+        return False
+    if not matches_excluded_sizes(listing, search):
         return False
     if search.include_keywords and not all(
         _contains(text, word) for word in search.include_keywords

@@ -11,6 +11,8 @@ app:
 telegram:
   max_images: 5
   disable_notification: false
+  # Telegram recommends no more than about one message per second to one chat.
+  min_send_interval_seconds: 1.1
 
 sources:
   ebay:
@@ -52,6 +54,8 @@ searches:
     max_price: 250
     # Structured brand data must match after case/space/punctuation normalization.
     required_brands: [example brand]
+    # Exact labels only; list aliases explicitly when a marketplace may use several forms.
+    excluded_sizes: [xs, x-small, extra small, s, small]
     include_keywords: []
     # Every group must match at least one phrase. This example is intentionally empty.
     # include_any_groups:

@@ -33,6 +33,7 @@ def test_dry_run_configuration_does_not_require_delivery_credentials(
     path.write_text(MINIMAL_CONFIG, encoding="utf-8")
     config = load_config(path)
     assert config.telegram.bot_token == ""
+    assert config.telegram.min_send_interval_seconds == 1.1
     with pytest.raises(ConfigError, match="TELEGRAM_BOT_TOKEN"):
         validate_delivery_config(config)
 
