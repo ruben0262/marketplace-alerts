@@ -2,8 +2,8 @@ app:
   poll_interval_seconds: 60
   request_timeout_seconds: 20
   request_retries: 3
-  state_db: data/listings.sqlite3
-  # false seeds the database on the first successful run without flooding Telegram.
+  state_file: data/listings.json
+  # false seeds the state file on the first successful run without flooding Telegram.
   send_existing_on_start: false
   # Add a small random delay between cycles so several installations do not synchronize.
   poll_jitter_seconds: 5
@@ -13,6 +13,13 @@ telegram:
   disable_notification: false
   # Telegram recommends no more than about one message per second to one chat.
   min_send_interval_seconds: 1.1
+
+translation:
+  # Known marketplace condition labels are translated locally even when this is false.
+  enabled: false
+  target_language: EN-GB
+  api_url: https://api-free.deepl.com/v2/translate
+  failure_cooldown_seconds: 900
 
 sources:
   ebay:

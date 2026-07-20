@@ -12,6 +12,7 @@ from .marketplaces.base import MarketplaceAdapter, MarketplaceUnavailableError
 from .models import Listing
 from .state import StateStore
 from .telegram import TelegramPublisher
+from .translation import TranslationService
 
 LOGGER = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ class Monitor:
         adapters: Sequence[MarketplaceAdapter],
         publisher: TelegramPublisher,
         state: StateStore,
+        translator: TranslationService | None = None,
         *,
         dry_run: bool = False,
     ) -> None:
@@ -30,16 +32,16 @@ class Monitor:
         self.adapters = list(adapters)
         self.publisher = publisher
         self.state = state
+        self.translator = translator
         self.dry_run = dry_run
         self._cycle_listing_cache: dict[str, Listing] = {}
         self._cycle_search_cache: dict[str, list[Listing]] = {}
 
     async def close(self) -> None:
-        await asyncio.gather(
-            *(adapter.close() for adapter in self.adapters),
-            self.publisher.close(),
-            return_exceptions=True,
-        )
+        closers = [*(adapter.close() for adapter in self.adapters), self.publisher.close()]
+        if self.translator:
+            closers.append(self.translator.close())
+        await asyncio.gather(*closers, return_exceptions=True)
         self.state.close()
 
     async def run(self, *, once: bool = False) -> None:
@@ -72,6 +74,8 @@ class Monitor:
                     if listings is None:
                         listings = await adapter.search(search)
                         self._cycle_search_cache[remote_scope] = listings
+                    if not self.dry_run:
+                        self.state.track_discovered(listings)
                     successful_searches += 1
                 except MarketplaceUnavailableError as exc:
                     LOGGER.warning("%s searches unavailable: %s", adapter.name, exc)
@@ -84,6 +88,7 @@ class Monitor:
                 )
                 if not self.dry_run:
                     self.state.mark_initialized(scope)
+                    self.state.flush()
         if not successful_searches:
             LOGGER.warning("No searches completed successfully; monitor remains uninitialized")
 
@@ -129,6 +134,8 @@ class Monitor:
             if self.dry_run:
                 LOGGER.info("DRY RUN new listing: %s | %s", listing.title, listing.url)
                 continue
+            if self.translator:
+                await self.translator.translate_listing(listing)
             try:
                 await self.publisher.send(listing)
             except Exception:

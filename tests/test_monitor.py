@@ -9,6 +9,7 @@ from listing_monitor.config import (
     EbayConfig,
     SearchConfig,
     TelegramConfig,
+    TranslationConfig,
     VintedConfig,
 )
 from listing_monitor.models import Listing
@@ -54,8 +55,13 @@ class FakePublisher:
 
 def make_config(database: Path, *, send_existing: bool = False):
     return Config(
-        app=AppConfig(state_db=database, send_existing_on_start=send_existing),
+        app=AppConfig(
+            state_file=database,
+            legacy_state_db=None,
+            send_existing_on_start=send_existing,
+        ),
         telegram=TelegramConfig("token", "chat"),
+        translation=TranslationConfig(),
         ebay=EbayConfig(),
         vinted=VintedConfig(),
         searches=[SearchConfig(name="test", query="jacket", sources={"ebay"})],
@@ -66,8 +72,8 @@ def make_config(database: Path, *, send_existing: bool = False):
 @pytest.mark.asyncio
 async def test_dry_run_does_not_change_state(tmp_path: Path):
     item = Listing("ebay", "EBAY_GB", "1", "Jacket", "https://example.test/1")
-    config = make_config(tmp_path / "state.sqlite3")
-    state = StateStore(config.app.state_db)
+    config = make_config(tmp_path / "state.json")
+    state = StateStore(config.app.state_file)
     publisher = FakePublisher()
     monitor = Monitor(config, [FakeAdapter([item])], publisher, state, dry_run=True)
     await monitor.poll_once()
@@ -82,8 +88,8 @@ async def test_dry_run_does_not_change_state(tmp_path: Path):
 async def test_initial_cycle_seeds_then_new_item_is_sent(tmp_path: Path):
     old = Listing("ebay", "EBAY_GB", "1", "Old jacket", "https://example.test/1")
     new = Listing("ebay", "EBAY_GB", "2", "New jacket", "https://example.test/2")
-    config = make_config(tmp_path / "state.sqlite3")
-    state = StateStore(config.app.state_db)
+    config = make_config(tmp_path / "state.json")
+    state = StateStore(config.app.state_file)
     adapter = FakeAdapter([old])
     publisher = FakePublisher()
     monitor = Monitor(config, [adapter], publisher, state)
@@ -92,13 +98,35 @@ async def test_initial_cycle_seeds_then_new_item_is_sent(tmp_path: Path):
     adapter.items.append(new)
     await monitor.poll_once()
     assert publisher.sent == [new]
+    await monitor.poll_once()
+    assert publisher.sent == [new]
     state.close()
+
+
+@pytest.mark.asyncio
+async def test_successful_send_is_not_repeated_after_restart(tmp_path: Path):
+    item = Listing("ebay", "EBAY_GB", "1", "Jacket", "https://example.test/1")
+    config = make_config(tmp_path / "state.json", send_existing=True)
+
+    first_state = StateStore(config.app.state_file)
+    first_publisher = FakePublisher()
+    first_monitor = Monitor(config, [FakeAdapter([item])], first_publisher, first_state)
+    await first_monitor.poll_once()
+    first_state.close()
+    assert first_publisher.sent == [item]
+
+    second_state = StateStore(config.app.state_file)
+    second_publisher = FakePublisher()
+    second_monitor = Monitor(config, [FakeAdapter([item])], second_publisher, second_state)
+    await second_monitor.poll_once()
+    second_state.close()
+    assert second_publisher.sent == []
 
 
 @pytest.mark.asyncio
 async def test_identical_remote_queries_are_fetched_once_per_cycle(tmp_path: Path):
     item = Listing("ebay", "EBAY_GB", "1", "Example hoodie", "https://example.test/1")
-    config = make_config(tmp_path / "state.sqlite3", send_existing=True)
+    config = make_config(tmp_path / "state.json", send_existing=True)
     config.searches.append(
         SearchConfig(
             name="second local rule",
@@ -108,7 +136,7 @@ async def test_identical_remote_queries_are_fetched_once_per_cycle(tmp_path: Pat
         )
     )
     adapter = FakeAdapter([item])
-    state = StateStore(config.app.state_db)
+    state = StateStore(config.app.state_file)
     monitor = Monitor(config, [adapter], FakePublisher(), state)
     await monitor.poll_once()
     assert adapter.search_calls == 1
@@ -134,8 +162,8 @@ async def test_newest_listings_are_published_first(tmp_path: Path):
         "https://example.test/2",
         created_at=now - timedelta(minutes=2),
     )
-    config = make_config(tmp_path / "state.sqlite3", send_existing=True)
-    state = StateStore(config.app.state_db)
+    config = make_config(tmp_path / "state.json", send_existing=True)
+    state = StateStore(config.app.state_file)
     publisher = FakePublisher()
     monitor = Monitor(config, [FakeAdapter([older, newer])], publisher, state)
     await monitor.poll_once()
@@ -145,9 +173,9 @@ async def test_newest_listings_are_published_first(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_unavailable_marketplace_stops_remaining_searches(tmp_path: Path):
-    config = make_config(tmp_path / "state.sqlite3")
+    config = make_config(tmp_path / "state.json")
     config.searches.append(SearchConfig(name="second", query="shorts", sources={"ebay"}))
-    state = StateStore(config.app.state_db)
+    state = StateStore(config.app.state_file)
     adapter = UnavailableAdapter([])
     monitor = Monitor(config, [adapter], FakePublisher(), state)
     await monitor.poll_once()

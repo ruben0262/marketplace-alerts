@@ -34,6 +34,8 @@ def test_dry_run_configuration_does_not_require_delivery_credentials(
     config = load_config(path)
     assert config.telegram.bot_token == ""
     assert config.telegram.min_send_interval_seconds == 1.1
+    assert config.app.state_file == Path("data/listings.json")
+    assert config.app.legacy_state_db == Path("data/listings.sqlite3")
     with pytest.raises(ConfigError, match="TELEGRAM_BOT_TOKEN"):
         validate_delivery_config(config)
 
@@ -56,3 +58,20 @@ def test_vinted_proxy_is_loaded_from_env_without_scheme(
     assert config.vinted.proxy == "user:secret@proxy.test:8080"
     assert config.vinted.cookies_dir == Path("data/vinted-cookies")
     assert config.vinted.retry_cooldown_seconds == 900
+
+
+def test_old_state_db_setting_maps_to_json_and_keeps_migration_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.delenv("DEEPL_API_KEY", raising=False)
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        MINIMAL_CONFIG.replace(
+            "poll_interval_seconds: 60",
+            "poll_interval_seconds: 60\n  state_db: data/legacy.sqlite3",
+        ),
+        encoding="utf-8",
+    )
+    config = load_config(path)
+    assert config.app.state_file == Path("data/legacy.json")
+    assert config.app.legacy_state_db == Path("data/legacy.sqlite3")

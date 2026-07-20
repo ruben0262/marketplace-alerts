@@ -14,6 +14,7 @@ from .marketplaces import EbayAdapter, VintedAdapter
 from .monitor import Monitor
 from .state import StateStore
 from .telegram import TelegramPublisher
+from .translation import TranslationService
 
 
 class RedactingFormatter(logging.Formatter):
@@ -67,7 +68,8 @@ async def _run(args: argparse.Namespace) -> None:
         config,
         adapters,
         publisher,
-        StateStore(config.app.state_db),
+        StateStore(config.app.state_file, legacy_sqlite_path=config.app.legacy_state_db),
+        TranslationService(config.translation, config.app, config.user_agent),
         dry_run=args.dry_run,
     )
     try:

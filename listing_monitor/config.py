@@ -21,7 +21,8 @@ class AppConfig:
     poll_interval_seconds: float = 60
     request_timeout_seconds: float = 20
     request_retries: int = 3
-    state_db: Path = Path("data/listings.sqlite3")
+    state_file: Path = Path("data/listings.json")
+    legacy_state_db: Path | None = Path("data/listings.sqlite3")
     send_existing_on_start: bool = False
     poll_jitter_seconds: float = 5
 
@@ -33,6 +34,15 @@ class TelegramConfig:
     max_images: int = 5
     disable_notification: bool = False
     min_send_interval_seconds: float = 1.1
+
+
+@dataclass(slots=True)
+class TranslationConfig:
+    enabled: bool = False
+    api_key: str = ""
+    api_url: str = "https://api-free.deepl.com/v2/translate"
+    target_language: str = "EN-GB"
+    failure_cooldown_seconds: int = 900
 
 
 @dataclass(slots=True)
@@ -90,6 +100,7 @@ class SearchConfig:
 class Config:
     app: AppConfig
     telegram: TelegramConfig
+    translation: TranslationConfig
     ebay: EbayConfig
     vinted: VintedConfig
     searches: list[SearchConfig]
@@ -156,17 +167,25 @@ def load_config(path: Path) -> Config:
     root = _mapping(raw, "config")
     app_raw = _mapping(root.get("app"), "app")
     telegram_raw = _mapping(root.get("telegram"), "telegram")
+    translation_raw = _mapping(root.get("translation"), "translation")
     sources_raw = _mapping(root.get("sources"), "sources")
     ebay_raw = _mapping(sources_raw.get("ebay"), "sources.ebay")
     vinted_raw = _mapping(sources_raw.get("vinted"), "sources.vinted")
 
+    state_file = Path(str(app_raw.get("state_file", "data/listings.json")))
+    legacy_state_value = app_raw.get("state_db", state_file.with_suffix(".sqlite3"))
+    legacy_state_db = Path(str(legacy_state_value)) if legacy_state_value else None
+    # Backward compatibility: an old state_db setting now selects a sibling JSON file.
+    if "state_file" not in app_raw and "state_db" in app_raw:
+        state_file = legacy_state_db.with_suffix(".json") if legacy_state_db else state_file
     app = AppConfig(
         poll_interval_seconds=float(app_raw.get("poll_interval_seconds", 60)),
         request_timeout_seconds=float(app_raw.get("request_timeout_seconds", 20)),
         request_retries=_positive_int(
             app_raw.get("request_retries", 3), "app.request_retries", maximum=10
         ),
-        state_db=Path(str(app_raw.get("state_db", "data/listings.sqlite3"))),
+        state_file=state_file,
+        legacy_state_db=legacy_state_db,
         send_existing_on_start=bool(app_raw.get("send_existing_on_start", False)),
         poll_jitter_seconds=float(app_raw.get("poll_jitter_seconds", 5)),
     )
@@ -189,6 +208,25 @@ def load_config(path: Path) -> Config:
         disable_notification=bool(telegram_raw.get("disable_notification", False)),
         min_send_interval_seconds=min_send_interval,
     )
+
+    translation_api_url = str(
+        translation_raw.get("api_url", "https://api-free.deepl.com/v2/translate")
+    ).strip()
+    if not translation_api_url.startswith("https://"):
+        raise ConfigError("translation.api_url must use https://")
+    translation = TranslationConfig(
+        enabled=bool(translation_raw.get("enabled", False)),
+        api_key=os.getenv("DEEPL_API_KEY", "").strip(),
+        api_url=translation_api_url,
+        target_language=str(translation_raw.get("target_language", "EN-GB")).strip().upper(),
+        failure_cooldown_seconds=_positive_int(
+            translation_raw.get("failure_cooldown_seconds", 900),
+            "translation.failure_cooldown_seconds",
+            maximum=86400,
+        ),
+    )
+    if not translation.target_language:
+        raise ConfigError("translation.target_language cannot be empty")
 
     ebay_enabled = bool(ebay_raw.get("enabled", True))
     marketplaces: list[EbayMarketplace] = []
@@ -300,6 +338,7 @@ def load_config(path: Path) -> Config:
     return Config(
         app=app,
         telegram=telegram,
+        translation=translation,
         ebay=ebay,
         vinted=vinted,
         searches=searches,

@@ -7,7 +7,8 @@ It supports:
 - configurable search terms, sizes, product types, prices, and listing age
 - multiple eBay marketplaces and Vinted regional sites
 - Telegram posts containing images, description, price, clickable product link, listing age, and ID
-- SQLite tracking so the same listing is not processed or posted twice
+- JSON tracking with fast in-memory indexes so listings are not processed or posted twice
+- built-in English condition labels and optional full listing translation through DeepL
 - eBay's official Browse API and a best-effort Vinted integration
 
 ## Project structure
@@ -61,6 +62,7 @@ TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
 EBAY_CLIENT_ID=
 EBAY_CLIENT_SECRET=
+DEEPL_API_KEY=
 ```
 
 Create the Telegram bot through `@BotFather`, add it to your channel as an administrator, and use either the channel username such as `@my_channel` or its numeric chat ID.
@@ -120,11 +122,11 @@ docker compose restart marketplace-alerts
 docker compose down
 ```
 
-The `restart: unless-stopped` policy restarts the monitor after a crash or VPS reboot. SQLite state is stored in the `marketplace-alerts-data` Docker volume and survives container rebuilds and `docker compose down`.
+The `restart: unless-stopped` policy restarts the monitor after a crash or VPS reboot. Listing state is stored as `data/listings.json` in the `marketplace-alerts-data` Docker volume and survives container rebuilds and `docker compose down`.
 
 Do not use `docker compose down -v` unless you intentionally want to delete the seen-listing history. Losing that volume resets duplicate protection.
 
-Run only one container for a given configuration and state database. Scaling the service into replicas can cause duplicate Telegram notifications. If you need separate monitors, use separate Compose projects, configurations, and volumes.
+Run only one container for a given configuration and state file. Scaling the service into replicas can cause duplicate Telegram notifications. If you need separate monitors, use separate Compose projects, configurations, and volumes.
 
 ## Run
 
@@ -156,11 +158,26 @@ Stop continuous mode with `Ctrl+C`. Use `python -m listing_monitor --help` to se
 
 ## Duplicate protection
 
-Each listing is identified by its source, marketplace, and native listing ID. That ID is included in its Telegram post and recorded in the local SQLite database.
+Each listing is identified by its source, marketplace, and native listing ID. That compound ID is included in its Telegram post and used as the key in `data/listings.json`.
 
-Marketplace result pages must be checked again to discover new IDs, but previously processed listings are not fetched in detail or posted again. Searches with identical marketplace parameters also share one response during a polling cycle.
+The JSON file is durable storage, while Python dictionaries and sets are built from it at startup for average O(1) ID checks. The monitor records every listing returned by a marketplace, not only matches. Successful Telegram sends are persisted immediately, and other state changes are saved after each search using an atomic file replacement. A failed send is deliberately left eligible for retry.
+
+Marketplace result pages must be checked again to discover new IDs, but previously handled listings are not fetched in detail or posted again. Searches with identical marketplace parameters also share one response during a polling cycle.
 
 When `send_existing_on_start` is `false`, the first successful scan records existing matches without flooding Telegram. Only later listings are posted.
+
+If an older `data/listings.sqlite3` database exists and the JSON file does not, its duplicate and initialization history is imported automatically on first startup. Keep both files and the Docker volume intact until that first migrated run completes.
+
+## English translation
+
+Common Vinted condition labels in French, German, Spanish, Italian, and Dutch are translated locally without an account or network request. Unknown conditions, titles, descriptions, and colours can optionally be translated with DeepL:
+
+1. Add `DEEPL_API_KEY` to the private `.env` file.
+2. Set `translation.enabled: true` in `config.yaml`.
+3. Use the Free API URL from the example configuration for a DeepL API Free key, or change it to `https://api.deepl.com/v2/translate` for a Pro API key.
+4. Restart the monitor.
+
+The service auto-detects the source language, requests British English by default, caches repeated text in memory, and keeps the original text if translation is unavailable. Enabling it sends the listing title, description, condition, and colour text to DeepL, so review its privacy and usage terms before use. Brand, size, seller name, IDs, prices, and links are kept unchanged. See the [DeepL translation API documentation](https://developers.deepl.com/api-reference/translate/request-translation).
 
 ## Search filters
 
@@ -243,7 +260,7 @@ python -m ruff check .
 
 ## Repository safety
 
-Never commit `.env`, `config.yaml`, databases, or credentials. Before pushing, check staged files with:
+Never commit `.env`, `config.yaml`, state files, databases, or credentials. Before pushing, check staged files with:
 
 ```powershell
 git status --short

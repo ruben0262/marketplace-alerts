@@ -6,6 +6,10 @@ All notable changes to this project are documented here. This project follows [K
 
 ### Added
 
+- Atomic JSON listing history with in-memory set/dictionary indexes for fast duplicate checks,
+  including every discovered item and automatic migration from the former SQLite database.
+- Offline English translations for common European condition labels and optional DeepL
+  translation for titles, descriptions, colours, and unknown conditions.
 - Product condition in Telegram alerts and configurable exact-size exclusions.
 - Telegram delivery pacing and support for server-provided `retry_after` delays.
 - Credential redaction for Telegram request URLs and URL-embedded proxy authentication.
