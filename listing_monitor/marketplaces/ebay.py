@@ -149,7 +149,7 @@ class EbayAdapter:
                     timestamp = cutoff.isoformat(timespec="milliseconds").replace("+00:00", "Z")
                     filters.append(f"itemStartDate:[{timestamp}]")
                 params: dict[str, Any] = {
-                    "q": search.query,
+                    "q": self._exact_phrase(search.query),
                     "limit": self.config.results_per_page,
                     "offset": page * self.config.results_per_page,
                     "sort": "newlyListed",
@@ -176,6 +176,19 @@ class EbayAdapter:
                 if len(items) < self.config.results_per_page:
                     break
         return list(listings.values())
+
+    @staticmethod
+    def _exact_phrase(query: str) -> str:
+        """Quote the query so eBay matches it as one phrase.
+
+        eBay full-text search decompounds single tokens (e.g. "boxraw" becomes
+        box + raw), flooding results with unrelated items (RAW papers, storage
+        boxes). Wrapping the query in double quotes forces exact-phrase matching.
+        """
+        phrase = query.strip()
+        if len(phrase) >= 2 and phrase[0] == '"' and phrase[-1] == '"':
+            return phrase
+        return f'"{phrase}"'
 
     @staticmethod
     def _parse_item(item: dict[str, Any], marketplace: str, search_name: str) -> Listing | None:

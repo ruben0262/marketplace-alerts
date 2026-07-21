@@ -58,7 +58,10 @@ async def test_ebay_search_requests_newly_listed_order():
 
     await adapter.search(SearchConfig(name="latest", query="boxraw"))
 
-    assert adapter.http.request_json.await_args.kwargs["params"]["sort"] == "newlyListed"
+    params = adapter.http.request_json.await_args.kwargs["params"]
+    assert params["sort"] == "newlyListed"
+    # Quoted so eBay matches "boxraw" as a phrase instead of box + raw.
+    assert params["q"] == '"boxraw"'
     await adapter.close()
 
 
