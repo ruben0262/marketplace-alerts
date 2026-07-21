@@ -79,6 +79,7 @@ class VintedConfig:
     fetch_item_details: bool = True
     cookies_dir: Path = Path("data/vinted-cookies")
     retry_cooldown_seconds: int = 900
+    request_spacing_seconds: float = 0.0
     proxy: str = ""
 
 
@@ -286,8 +287,11 @@ def load_config(path: Path) -> Config:
             "sources.vinted.retry_cooldown_seconds",
             maximum=86400,
         ),
+        request_spacing_seconds=float(vinted_raw.get("request_spacing_seconds", 1.0)),
         proxy=_normalize_proxy(os.getenv("VINTED_PROXY", "")),
     )
+    if vinted.request_spacing_seconds < 0:
+        raise ConfigError("sources.vinted.request_spacing_seconds cannot be negative")
 
     searches_raw = root.get("searches", [])
     if not isinstance(searches_raw, list) or not searches_raw:

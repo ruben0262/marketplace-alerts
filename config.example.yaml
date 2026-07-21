@@ -67,6 +67,9 @@ sources:
     cookies_dir: data/vinted-cookies
     # Avoid retrying a blocked site on every search and every minute.
     retry_cooldown_seconds: 900
+    # Minimum seconds between every Vinted request (catalog + detail) to avoid rate
+    # limits when scanning many sites and enriching items. Set 0 to disable pacing.
+    request_spacing_seconds: 1.0
 
 searches:
   - name: Example apparel search

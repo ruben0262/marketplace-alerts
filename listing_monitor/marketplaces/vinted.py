@@ -25,6 +25,20 @@ class VintedAdapter:
         self._clients: dict[str, VintedClient] = {}
         self._unavailable_until: dict[str, float] = {}
         self._details_unavailable_until: dict[str, float] = {}
+        # Serialize and space out every Vinted request so bursts do not trip rate limits.
+        self._request_lock = asyncio.Lock()
+        self._next_request_at = 0.0
+
+    async def _throttle(self) -> None:
+        """Hold each request at least request_spacing_seconds after the previous one."""
+        spacing = self.config.request_spacing_seconds
+        if spacing <= 0:
+            return
+        async with self._request_lock:
+            wait = self._next_request_at - time.monotonic()
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._next_request_at = time.monotonic() + spacing
 
     async def close(self) -> None:
         await asyncio.gather(
@@ -105,6 +119,7 @@ class VintedAdapter:
             catalog_url = self._catalog_url(site, search)
             for page in range(1, self.config.pages_per_search + 1):
                 try:
+                    await self._throttle()
                     items = await client.search_items(
                         url=catalog_url,
                         page=page,
@@ -143,6 +158,7 @@ class VintedAdapter:
         if self._details_unavailable_until.get(site.url, 0) > time.monotonic():
             return
         try:
+            await self._throttle()
             item = await self._client(site).item_details(listing.url, raw_data=True)
         except Exception as exc:
             self._details_unavailable_until[site.url] = (

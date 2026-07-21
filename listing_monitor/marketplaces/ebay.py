@@ -198,7 +198,7 @@ class EbayAdapter:
             currency=price.get("currency"),
             description=str(item.get("shortDescription", "")),
             image_urls=image_urls,
-            created_at=parse_datetime(item.get("itemOriginDate") or item.get("itemCreationDate")),
+            created_at=parse_datetime(item.get("itemCreationDate")),
             seller=seller.get("username"),
             search_name=search_name,
             attributes=attributes,

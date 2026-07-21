@@ -271,6 +271,39 @@ async def test_vinted_search_uses_newest_browser_client_and_cooldown(tmp_path: P
 
 
 @pytest.mark.asyncio
+async def test_vinted_request_spacing_paces_consecutive_requests(tmp_path: Path):
+    import time
+
+    site = VintedSite("https://www.vinted.test", "Test Vinted")
+    config = VintedConfig(
+        enabled=True,
+        sites=[site],
+        pages_per_search=3,
+        results_per_page=5,
+        cookies_dir=tmp_path,
+        request_spacing_seconds=0.05,
+    )
+    adapter = VintedAdapter(config, AppConfig(), "unused")
+    adapter._clients[site.url] = FakeVintedClient(
+        items=[
+            {
+                "id": 1,
+                "title": "Example",
+                "url": "/items/1-example",
+                "price": {"amount": "5", "currency_code": "GBP"},
+            }
+            for _ in range(5)
+        ]
+    )
+    start = time.monotonic()
+    await adapter.search(SearchConfig(name="x", query="example"))
+    elapsed = time.monotonic() - start
+    # Three paced pages: gaps after the first two enforce at least 2 * spacing.
+    assert elapsed >= 0.1
+    await adapter.close()
+
+
+@pytest.mark.asyncio
 async def test_vinted_enrichment_delegates_current_detail_lookup(tmp_path: Path):
     site = VintedSite("https://www.vinted.test", "Test Vinted")
     config = VintedConfig(enabled=True, sites=[site], cookies_dir=tmp_path)

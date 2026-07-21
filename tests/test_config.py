@@ -60,6 +60,26 @@ def test_vinted_proxy_is_loaded_from_env_without_scheme(
     assert config.vinted.retry_cooldown_seconds == 900
 
 
+def test_vinted_request_spacing_defaults_to_one_second(tmp_path: Path):
+    path = tmp_path / "config.yaml"
+    path.write_text(MINIMAL_CONFIG, encoding="utf-8")
+    config = load_config(path)
+    assert config.vinted.request_spacing_seconds == 1.0
+
+
+def test_vinted_request_spacing_rejects_negative(tmp_path: Path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        MINIMAL_CONFIG.replace(
+            "        name: Test Vinted",
+            "        name: Test Vinted\n    request_spacing_seconds: -1",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="request_spacing_seconds"):
+        load_config(path)
+
+
 def test_old_state_db_setting_maps_to_json_and_keeps_migration_source(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
