@@ -110,14 +110,24 @@ class Monitor:
     ) -> None:
         listings.sort(key=lambda item: item.created_at or self._minimum_datetime(), reverse=True)
         match_count = 0
+        already_handled_count = 0
+        already_processed_count = 0
+        brand_rejected_count = 0
+        filter_rejected_count = 0
+        seeded_count = 0
+        sent_count = 0
+        failed_count = 0
         for listing in listings:
             if self.state.is_listing_seen(listing):
+                already_handled_count += 1
                 if not self.dry_run:
                     self.state.mark_processed(scope, listing.key)
                 continue
             if self.state.is_processed(scope, listing.key):
+                already_processed_count += 1
                 continue
             if not matches_required_brand(listing, search, fallback_to_text=False):
+                brand_rejected_count += 1
                 if not self.dry_run:
                     self.state.mark_processed(scope, listing.key)
                 continue
@@ -132,11 +142,13 @@ class Monitor:
                 # Persist detail-enriched metadata even when local filters reject the product.
                 self.state.track_discovered([listing])
             if not matches_search(listing, search):
+                filter_rejected_count += 1
                 if not self.dry_run:
                     self.state.mark_processed(scope, listing.key)
                 continue
             match_count += 1
             if initial_seed:
+                seeded_count += 1
                 if not self.dry_run:
                     self.state.mark_seen(listing, sent=False)
                     self.state.mark_processed(scope, listing.key)
@@ -149,11 +161,34 @@ class Monitor:
             try:
                 await self.publisher.send(listing)
             except Exception:
+                failed_count += 1
                 LOGGER.exception("Could not publish listing %s", listing.key)
                 continue
             self.state.mark_seen(listing, sent=True)
             self.state.mark_processed(scope, listing.key)
-        LOGGER.info("%s: %d fetched, %d new matches", search.name, len(listings), match_count)
+            sent_count += 1
+            LOGGER.info(
+                "Sent %s product %s to Telegram: %s",
+                listing.source,
+                listing.listing_id,
+                listing.title,
+            )
+        LOGGER.info(
+            "%s / %s: %d fetched, %d matched, %d sent, %d seeded, "
+            "%d already handled, %d already checked, %d brand rejected, "
+            "%d filter rejected, %d send failed",
+            adapter.name,
+            search.name,
+            len(listings),
+            match_count,
+            sent_count,
+            seeded_count,
+            already_handled_count,
+            already_processed_count,
+            brand_rejected_count,
+            filter_rejected_count,
+            failed_count,
+        )
 
     @staticmethod
     def _scope(source: str, search: SearchConfig) -> str:

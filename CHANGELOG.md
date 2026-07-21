@@ -6,6 +6,8 @@ All notable changes to this project are documented here. This project follows [K
 
 ### Added
 
+- Per-search delivery diagnostics showing sent, silently seeded, already handled/checked,
+  rejected, and failed Telegram counts, plus a startup summary of enabled sources.
 - Host-visible `./data` bind mount for persistent, directly searchable VPS JSON state, plus
   complete observed listing metadata in each product-ID record.
 - Product-ID-first JSON state schema with automatic version-1 migration and one durable record

@@ -195,6 +195,11 @@ Marketplace result pages must be checked again to discover new IDs, but previous
 
 When `send_existing_on_start` is `false`, the first successful scan records existing matches without flooding Telegram. Only later listings are posted.
 
+Each completed search writes an INFO summary with separate counts for matches sent to Telegram,
+first-scan matches seeded silently, products already handled, products already checked for that
+search, brand/filter rejections, and Telegram failures. A successful delivery also logs the source
+and native product ID. This makes a quiet source diagnosable without exposing credentials.
+
 Version-1 JSON state is automatically consolidated into the product-ID index. If an older `data/listings.sqlite3` database exists and the JSON file does not, its duplicate and initialization history is imported automatically on first startup. Keep the state files intact until the migrated run completes.
 
 ## English translation

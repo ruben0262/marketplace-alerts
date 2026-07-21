@@ -17,6 +17,9 @@ from .telegram import TelegramPublisher
 from .translation import TranslationService
 
 
+LOGGER = logging.getLogger(__name__)
+
+
 class RedactingFormatter(logging.Formatter):
     """Redact credentials from complete log records, including exception tracebacks."""
 
@@ -64,6 +67,11 @@ async def _run(args: argparse.Namespace) -> None:
     if config.vinted.enabled:
         adapters.append(VintedAdapter(config.vinted, config.app, config.user_agent))
     publisher = TelegramPublisher(config.telegram, config.app, config.user_agent)
+    LOGGER.info(
+        "Starting monitor with source(s): %s; send existing on first scan: %s",
+        ", ".join(adapter.name for adapter in adapters),
+        config.app.send_existing_on_start,
+    )
     monitor = Monitor(
         config,
         adapters,
