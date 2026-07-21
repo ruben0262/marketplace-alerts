@@ -77,6 +77,37 @@ Edit `config.yaml` to choose:
 
 The example configuration starts with eBay disabled. After adding eBay credentials, change `sources.ebay.enabled` to `true`.
 
+### eBay API requirements
+
+The eBay integration uses the official production Browse API with an OAuth Application token.
+`EBAY_CLIENT_ID` must be the Production App ID and `EBAY_CLIENT_SECRET` must be the matching
+Production Cert ID; a user login token is not required for Browse search or `getItem`. Production
+Buy API access is restricted, so the keyset must be enabled and the application may need approval
+through the eBay Partner Network and Developer Support. eBay also requires a Production keyset to
+subscribe to or opt out of marketplace account deletion notifications before it can be enabled.
+See eBay's [Buy API requirements](https://developer.ebay.com/api-docs/buy/buy-requirements.html)
+and [getting-started guide](https://developer.ebay.com/develop/guides-v2/get-started-with-ebay-apis).
+
+Each eBay marketplace has a `delivery_country` and `currency`. The currency is required whenever a
+search uses `min_price` or `max_price`, because Browse requires `priceCurrency` with its price
+filter. `max_age_hours` is sent as eBay's `itemStartDate` filter as well as checked locally. Search
+uses `sort=newlyListed`; full Brand, Size, Condition, description, seller, and image data are then
+retrieved with Browse `getItem` for previously unhandled candidates. Set
+`sources.ebay.fetch_item_details: false` to use only search-summary data.
+
+The default Browse limit is 5,000 calls per day. Searches with identical `query`, price, and eBay
+category settings share one remote result per polling cycle, so prefer one broad remote query with
+separate local keyword groups. At a one-minute interval, one shared query across three marketplaces
+normally costs at least 4,320 search calls per day, plus extra pages and new-item detail calls. If
+your searches need multiple pages or distinct queries, increase `poll_interval_seconds` or request
+a higher limit after eBay's Application Growth Check. See eBay's
+[API call limits](https://developer.ebay.com/develop/get-started/api-call-limits).
+
+eBay does not offer a general public websocket that pushes every new matching marketplace listing.
+Its notification topics cover changes such as availability and are access-limited; the newly-listed
+Feed files are delayed and are not suitable for minute-level alerts. Polling Browse is therefore the
+appropriate API for this monitor.
+
 ## Run with Docker on a VPS
 
 Docker Compose runs one continuous Marketplace Alerts container. No ports or additional services are required.
@@ -237,6 +268,10 @@ recognizes common localized size fields and aliases, so `XS`, `X S`, `x-small`, 
 possessives such as `men's`.
 
 Marketplace searches and Telegram delivery are ordered newest-first. Increase `pages_per_search` to backfill older results; adapters stop early when a page is not full. Use `max_age_hours: null` if old listings should remain eligible. Setting `send_existing_on_start: true` sends matching backfill results the first time a search runs, so use it carefully.
+
+For API efficiency, searches that use the same marketplace query and source-specific category/price
+settings share one fetched result during each cycle. Product type, size, brand, and exclusion rules
+remain local, so several alert rules can safely reuse the same broad query.
 
 ## Telegram delivery rate
 

@@ -217,6 +217,7 @@ class Monitor:
         payload = (
             source,
             search.query,
+            search.max_age_hours if source == "ebay" else None,
             search.min_price,
             search.max_price,
             tuple(search.ebay_category_ids),

@@ -6,6 +6,10 @@ All notable changes to this project are documented here. This project follows [K
 
 ### Added
 
+- Official eBay Browse `getItem` enrichment for complete brand, size, condition, description,
+  seller, link, and image information, with bounded detail-failure cooldowns.
+- eBay server-side listing-age filtering, required per-marketplace currencies for price filters,
+  and readable OAuth/Browse API error details.
 - Per-search delivery diagnostics showing sent, silently seeded, already handled/checked,
   rejected, and failed Telegram counts, plus a startup summary of enabled sources.
 - Host-visible `./data` bind mount for persistent, directly searchable VPS JSON state, plus
@@ -37,6 +41,8 @@ All notable changes to this project are documented here. This project follows [K
 
 ### Changed
 
+- Consolidated the private BOXRAW alert rules onto one shared remote query per cycle to remain
+  within eBay's default daily Browse API allowance.
 - Telegram rate limits no longer trigger an immediate photo-to-text fallback.
 - Vinted item-detail failures now enter a per-site cooldown while catalog alerts continue.
 - Noisy `httpx` INFO request logs are suppressed so Telegram bot tokens are not printed.

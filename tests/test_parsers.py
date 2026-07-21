@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -58,6 +59,92 @@ async def test_ebay_search_requests_newly_listed_order():
     await adapter.search(SearchConfig(name="latest", query="boxraw"))
 
     assert adapter.http.request_json.await_args.kwargs["params"]["sort"] == "newlyListed"
+    await adapter.close()
+
+
+@pytest.mark.asyncio
+async def test_ebay_search_sends_supported_age_and_price_filters():
+    adapter = EbayAdapter(
+        EbayConfig(
+            enabled=True,
+            marketplaces=[EbayMarketplace("EBAY_GB", "GB", "GBP")],
+            pages_per_search=1,
+            results_per_page=10,
+        ),
+        AppConfig(request_retries=1),
+        "test",
+    )
+    adapter._access_token = AsyncMock(return_value="token")
+    adapter.http.request_json = AsyncMock(return_value={"itemSummaries": []})
+
+    await adapter.search(
+        SearchConfig(
+            name="latest",
+            query="boxraw",
+            min_price=Decimal("20"),
+            max_price=Decimal("100"),
+            max_age_hours=24,
+        )
+    )
+
+    filters = adapter.http.request_json.await_args.kwargs["params"]["filter"].split(",")
+    assert "deliveryCountry:GB" in filters
+    assert "price:[20..100]" in filters
+    assert "priceCurrency:GBP" in filters
+    assert any(value.startswith("itemStartDate:[") and value.endswith("Z]") for value in filters)
+    await adapter.close()
+
+
+@pytest.mark.asyncio
+async def test_ebay_enrichment_uses_get_item_details():
+    adapter = EbayAdapter(
+        EbayConfig(
+            enabled=True,
+            marketplaces=[EbayMarketplace("EBAY_GB", "GB", "GBP")],
+        ),
+        AppConfig(request_retries=1),
+        "test",
+    )
+    adapter._access_token = AsyncMock(return_value="token")
+    adapter.http.request_json = AsyncMock(
+        return_value={
+            "title": "BOXRAW Hoodie",
+            "itemWebUrl": "https://www.ebay.co.uk/itm/123",
+            "price": {"value": "55", "currency": "GBP"},
+            "description": "<p>Black training hoodie</p>",
+            "itemCreationDate": "2026-01-02T03:04:05.000Z",
+            "brand": "BOXRAW",
+            "size": "XL",
+            "condition": "Pre-owned - Excellent",
+            "color": "Black",
+            "localizedAspects": [{"name": "Department", "value": "Men"}],
+            "seller": {"username": "seller"},
+            "image": {"imageUrl": "https://img.test/a.jpg"},
+            "additionalImages": [{"imageUrl": "https://img.test/b.jpg"}],
+        }
+    )
+    listing = EbayAdapter._parse_item(
+        {
+            "itemId": "v1|123|0",
+            "title": "BOXRAW Hoodie",
+            "itemWebUrl": "https://www.ebay.co.uk/itm/123",
+        },
+        "EBAY_GB",
+        "tops",
+    )
+    assert listing is not None
+
+    await adapter.enrich(listing)
+
+    request_url = adapter.http.request_json.await_args.args[1]
+    assert request_url.endswith("/v1%7C123%7C0")
+    assert listing.description == "Black training hoodie"
+    assert listing.attributes["Brand"] == "BOXRAW"
+    assert listing.attributes["Size"] == "XL"
+    assert listing.attributes["Condition"] == "Pre-owned - Excellent"
+    assert listing.attributes["Color"] == "Black"
+    assert listing.attributes["Department"] == "Men"
+    assert listing.image_urls == ["https://img.test/a.jpg", "https://img.test/b.jpg"]
     await adapter.close()
 
 

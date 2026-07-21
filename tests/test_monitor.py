@@ -77,6 +77,16 @@ def test_search_scope_is_stable_for_equivalent_source_sets(tmp_path: Path):
     assert Monitor._scope("ebay", first) == Monitor._scope("ebay", second)
 
 
+def test_ebay_remote_cache_respects_server_side_age_filter(tmp_path: Path):
+    first = make_config(tmp_path / "first.json").searches[0]
+    second = make_config(tmp_path / "second.json").searches[0]
+    first.max_age_hours = 12
+    second.max_age_hours = 24
+
+    assert Monitor._remote_scope("ebay", first) != Monitor._remote_scope("ebay", second)
+    assert Monitor._remote_scope("vinted", first) == Monitor._remote_scope("vinted", second)
+
+
 @pytest.mark.asyncio
 async def test_dry_run_does_not_change_state(tmp_path: Path):
     item = Listing("ebay", "EBAY_GB", "1", "Jacket", "https://example.test/1")

@@ -75,3 +75,35 @@ def test_old_state_db_setting_maps_to_json_and_keeps_migration_source(
     config = load_config(path)
     assert config.app.state_file == Path("data/legacy.json")
     assert config.app.legacy_state_db == Path("data/legacy.sqlite3")
+
+
+def test_ebay_price_filter_requires_marketplace_currency(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("EBAY_CLIENT_ID", "production-app-id")
+    monkeypatch.setenv("EBAY_CLIENT_SECRET", "production-cert-id")
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        """
+app:
+  poll_interval_seconds: 60
+telegram: {}
+sources:
+  ebay:
+    enabled: true
+    marketplaces:
+      - id: EBAY_GB
+        delivery_country: GB
+  vinted:
+    enabled: false
+searches:
+  - name: Price search
+    query: example
+    sources: [ebay]
+    max_price: 100
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="EBAY_GB"):
+        load_config(path)

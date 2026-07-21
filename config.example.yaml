@@ -28,10 +28,14 @@ sources:
     marketplaces:
       - id: EBAY_GB
         delivery_country: GB
+        currency: GBP
       - id: EBAY_DE
         delivery_country: DE
+        currency: EUR
     pages_per_search: 3
     results_per_page: 50
+    fetch_item_details: true
+    retry_cooldown_seconds: 900
 
   # Vinted has no supported public developer API. This adapter uses the web catalog
   # endpoint and may need maintenance if Vinted changes it. Keep polling considerate.

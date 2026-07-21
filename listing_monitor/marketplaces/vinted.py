@@ -6,7 +6,7 @@ import time
 from typing import Any
 from urllib.parse import urlencode, urlparse
 
-from vinted import VintedClient
+from vinted import VintedClient, VintedError
 
 from ..config import AppConfig, SearchConfig, VintedConfig, VintedSite
 from ..models import Listing, parse_datetime, parse_decimal
@@ -54,10 +54,20 @@ class VintedAdapter:
             site for site in self.config.sites if self._unavailable_until.get(site.url, 0) <= now
         ]
 
+    @staticmethod
+    def _failure_reason(exc: Exception) -> str:
+        """Surface the underlying cause; VintedNetworkError hides the real 403/timeout."""
+        status = getattr(exc, "status_code", None)
+        if status:
+            return f"HTTP {status}"
+        if isinstance(exc, VintedError):
+            # str(exc) carries the wrapped transport error, e.g. "Failed to refresh cookies: ...".
+            return f"{type(exc).__name__}: {exc}"
+        return type(exc).__name__
+
     def _mark_unavailable(self, site: VintedSite, exc: Exception) -> None:
         self._unavailable_until[site.url] = time.monotonic() + self.config.retry_cooldown_seconds
-        status = getattr(exc, "status_code", None)
-        reason = f"HTTP {status}" if status else type(exc).__name__
+        reason = self._failure_reason(exc)
         LOGGER.warning(
             "%s unavailable (%s); pausing that site for %d seconds",
             site.name,
@@ -138,8 +148,7 @@ class VintedAdapter:
             self._details_unavailable_until[site.url] = (
                 time.monotonic() + self.config.retry_cooldown_seconds
             )
-            status = getattr(exc, "status_code", None)
-            reason = f"HTTP {status}" if status else type(exc).__name__
+            reason = self._failure_reason(exc)
             LOGGER.warning(
                 "%s item details unavailable (%s); using catalog data for %d seconds",
                 site.name,

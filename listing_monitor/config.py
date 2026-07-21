@@ -49,6 +49,7 @@ class TranslationConfig:
 class EbayMarketplace:
     id: str
     delivery_country: str
+    currency: str = ""
 
 
 @dataclass(slots=True)
@@ -59,6 +60,8 @@ class EbayConfig:
     marketplaces: list[EbayMarketplace] = field(default_factory=list)
     pages_per_search: int = 2
     results_per_page: int = 50
+    fetch_item_details: bool = True
+    retry_cooldown_seconds: int = 900
 
 
 @dataclass(slots=True)
@@ -234,9 +237,12 @@ def load_config(path: Path) -> Config:
         entry = _mapping(item, f"sources.ebay.marketplaces[{index}]")
         marketplace_id = str(entry.get("id", "")).strip()
         country = str(entry.get("delivery_country", "")).strip().upper()
+        currency = str(entry.get("currency", "")).strip().upper()
         if not marketplace_id or len(country) != 2:
             raise ConfigError(f"Invalid eBay marketplace at index {index}")
-        marketplaces.append(EbayMarketplace(marketplace_id, country))
+        if currency and len(currency) != 3:
+            raise ConfigError(f"Invalid eBay currency at index {index}")
+        marketplaces.append(EbayMarketplace(marketplace_id, country, currency))
     ebay = EbayConfig(
         enabled=ebay_enabled,
         client_id=os.getenv("EBAY_CLIENT_ID", "").strip(),
@@ -247,6 +253,12 @@ def load_config(path: Path) -> Config:
         ),
         results_per_page=_positive_int(
             ebay_raw.get("results_per_page", 50), "sources.ebay.results_per_page", maximum=200
+        ),
+        fetch_item_details=bool(ebay_raw.get("fetch_item_details", True)),
+        retry_cooldown_seconds=_positive_int(
+            ebay_raw.get("retry_cooldown_seconds", 900),
+            "sources.ebay.retry_cooldown_seconds",
+            maximum=86400,
         ),
     )
 
@@ -330,6 +342,17 @@ def load_config(path: Path) -> Config:
 
     if ebay.enabled and (not ebay.client_id or not ebay.client_secret or not ebay.marketplaces):
         raise ConfigError("Enabled eBay source requires credentials and at least one marketplace")
+    if ebay.enabled and any(
+        search.min_price is not None or search.max_price is not None for search in searches
+    ):
+        missing_currencies = [
+            marketplace.id for marketplace in ebay.marketplaces if not marketplace.currency
+        ]
+        if missing_currencies:
+            raise ConfigError(
+                "eBay marketplaces require currency when a search uses min_price or max_price: "
+                + ", ".join(missing_currencies)
+            )
     if vinted.enabled and not vinted.sites:
         raise ConfigError("Enabled Vinted source requires at least one site")
     if not ebay.enabled and not vinted.enabled:
