@@ -28,6 +28,9 @@ class VintedAdapter:
         # Serialize and space out every Vinted request so bursts do not trip rate limits.
         self._request_lock = asyncio.Lock()
         self._next_request_at = 0.0
+        # Hard ceiling per request: the proxied curl_cffi client can hang on a bad TLS
+        # handshake, and one stalled await would freeze the whole single-task monitor.
+        self._request_timeout = max(app.request_timeout_seconds, 30.0)
 
     async def _throttle(self) -> None:
         """Hold each request at least request_spacing_seconds after the previous one."""
@@ -120,12 +123,15 @@ class VintedAdapter:
             for page in range(1, self.config.pages_per_search + 1):
                 try:
                     await self._throttle()
-                    items = await client.search_items(
-                        url=catalog_url,
-                        page=page,
-                        per_page=self.config.results_per_page,
-                        order="newest_first",
-                        raw_data=True,
+                    items = await asyncio.wait_for(
+                        client.search_items(
+                            url=catalog_url,
+                            page=page,
+                            per_page=self.config.results_per_page,
+                            order="newest_first",
+                            raw_data=True,
+                        ),
+                        timeout=self._request_timeout,
                     )
                 except Exception as exc:
                     self._mark_unavailable(site, exc)
@@ -159,7 +165,10 @@ class VintedAdapter:
             return
         try:
             await self._throttle()
-            item = await self._client(site).item_details(listing.url, raw_data=True)
+            item = await asyncio.wait_for(
+                self._client(site).item_details(listing.url, raw_data=True),
+                timeout=self._request_timeout,
+            )
         except Exception as exc:
             self._details_unavailable_until[site.url] = (
                 time.monotonic() + self.config.retry_cooldown_seconds

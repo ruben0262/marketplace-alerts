@@ -57,9 +57,14 @@ class Monitor:
         self.state.close()
 
     async def run(self, *, once: bool = False) -> None:
+        # Safety net: abort a cycle that runs far longer than a healthy one (e.g. an
+        # adapter request that hangs despite its own timeout) so the loop never freezes.
+        cycle_timeout = max(300.0, self.config.app.poll_interval_seconds * 3)
         while True:
             try:
-                await self.poll_once()
+                await asyncio.wait_for(self.poll_once(), timeout=cycle_timeout)
+            except TimeoutError:
+                LOGGER.error("Polling cycle exceeded %.0fs and was aborted; continuing", cycle_timeout)
             except Exception:
                 # Never let one bad cycle kill a 24/7 monitor; log and keep polling.
                 LOGGER.exception("Polling cycle failed; continuing to next poll")
