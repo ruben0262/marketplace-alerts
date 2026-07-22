@@ -5,7 +5,6 @@ import hashlib
 import logging
 import random
 from collections.abc import Sequence
-from pathlib import Path
 
 from .config import Config, SearchConfig
 from .filtering import matches_required_brand, matches_search
@@ -50,12 +49,20 @@ class Monitor:
         self.dry_run = dry_run
         self._cycle_listing_cache: dict[str, Listing] = {}
         self._cycle_search_cache: dict[str, list[Listing]] = {}
+        self._liveness = self.config.app.state_file.parent / "heartbeat"
+        self._heartbeat: Heartbeat | None = None
+        # Let slow adapters (Vinted scans eight sites) report progress between requests
+        # so the watchdogs measure real forward motion, not just once per polling cycle.
+        for adapter in self.adapters:
+            if hasattr(adapter, "on_progress"):
+                adapter.on_progress = self._progress
 
-    @staticmethod
-    def _touch(path: Path) -> None:
-        """Refresh the liveness file the healthcheck watches; ignore I/O errors."""
+    def _progress(self) -> None:
+        """Signal that the loop is still moving: feed the watchdog and liveness file."""
+        if self._heartbeat is not None:
+            self._heartbeat.beat()
         try:
-            path.touch()
+            self._liveness.touch()
         except OSError:
             pass
 
@@ -66,26 +73,22 @@ class Monitor:
         await asyncio.gather(*closers, return_exceptions=True)
         self.state.close()
 
+    # No forward progress for this long means the loop is wedged: the watchdog thread
+    # force-exits and the Docker healthcheck reports unhealthy so the container restarts.
+    STALL_TIMEOUT = 180.0
+
     async def run(self, *, once: bool = False) -> None:
-        # Safety net: abort a cycle that runs far longer than a healthy one (e.g. an
-        # adapter request that hangs despite its own timeout) so the loop never freezes.
+        # Abort an interruptible cycle that overruns; a native wedge is caught instead
+        # by the stall watchdog / healthcheck, which do not depend on the event loop.
         cycle_timeout = max(300.0, self.config.app.poll_interval_seconds * 3)
-        # Last-resort recovery: a wedged native call can block the event loop so even
-        # cycle_timeout cannot fire. A separate-thread heartbeat force-restarts then.
-        heartbeat = None
-        # Liveness file for the external Docker healthcheck: refreshed by the main
-        # loop, so if a native call wedges the loop the file goes stale and the
-        # daemon-run healthcheck (immune to the frozen process) fails.
-        liveness = self.config.app.state_file.parent / "heartbeat"
         if not once:
-            stall_timeout = cycle_timeout + self.config.app.poll_interval_seconds + 120.0
-            heartbeat = Heartbeat(stall_timeout)
-            heartbeat.start()
-            LOGGER.info("Heartbeat watchdog armed; restart if no progress for %.0fs", stall_timeout)
+            self._heartbeat = Heartbeat(self.STALL_TIMEOUT)
+            self._heartbeat.start()
+            LOGGER.info(
+                "Heartbeat watchdog armed; restart if no progress for %.0fs", self.STALL_TIMEOUT
+            )
         while True:
-            if heartbeat:
-                heartbeat.beat()
-            self._touch(liveness)
+            self._progress()
             try:
                 await asyncio.wait_for(self.poll_once(), timeout=cycle_timeout)
             except TimeoutError:
@@ -93,14 +96,23 @@ class Monitor:
             except Exception:
                 # Never let one bad cycle kill a 24/7 monitor; log and keep polling.
                 LOGGER.exception("Polling cycle failed; continuing to next poll")
-            self._touch(liveness)
+            self._progress()
             if once:
                 return
             delay = self.config.app.poll_interval_seconds + random.uniform(
                 0, self.config.app.poll_jitter_seconds
             )
             LOGGER.info("Next poll in %.1f seconds", delay)
-            await asyncio.sleep(delay)
+            await self._sleep(delay)
+
+    async def _sleep(self, delay: float) -> None:
+        """Sleep between polls in short steps so liveness stays fresh while idle."""
+        remaining = delay
+        while remaining > 0:
+            self._progress()
+            step = min(15.0, remaining)
+            await asyncio.sleep(step)
+            remaining -= step
 
     async def poll_once(self) -> None:
         self._cycle_listing_cache.clear()
@@ -116,6 +128,7 @@ class Monitor:
             for search in self.config.searches:
                 if adapter.name not in search.sources:
                     continue
+                self._progress()
                 scope = self._scope(adapter.name, search)
                 try:
                     remote_scope = self._remote_scope(adapter.name, search)

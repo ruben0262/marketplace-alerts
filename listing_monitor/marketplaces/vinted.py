@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlencode, urlparse
 
@@ -20,6 +21,10 @@ class VintedAdapter:
 
     name = "vinted"
 
+    # Set by the monitor; called between requests so the stall watchdog sees progress
+    # during a long eight-site scan instead of only once per polling cycle.
+    on_progress: Callable[[], None] = staticmethod(lambda: None)
+
     def __init__(self, config: VintedConfig, app: AppConfig, user_agent: str) -> None:
         self.config = config
         self._clients: dict[str, VintedClient] = {}
@@ -34,6 +39,7 @@ class VintedAdapter:
 
     async def _throttle(self) -> None:
         """Hold each request at least request_spacing_seconds after the previous one."""
+        self.on_progress()
         spacing = self.config.request_spacing_seconds
         if spacing <= 0:
             return
