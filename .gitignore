@@ -24,3 +24,7 @@ data/
 *.log
 cookies/
 .vinted-cookies/
+ebay_debug.py
+
+# Tests kept local only, not tracked in version control.
+tests/
