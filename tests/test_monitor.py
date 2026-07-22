@@ -97,7 +97,7 @@ async def test_dry_run_does_not_change_state(tmp_path: Path):
     await monitor.poll_once()
     scope = monitor._scope("ebay", config.searches[0])
     assert not state.is_initialized()
-    assert not state.is_seen(item.key)
+    assert not state.is_listing_seen(item)
     assert not state.is_processed(scope, item.key)
     state.close()
 

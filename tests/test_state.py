@@ -28,7 +28,7 @@ def test_json_state_round_trip_and_indexes(tmp_path: Path):
     product_key = StateStore.product_key(item.source, item.listing_id)
     assert product_key in store.products
     assert not store.is_initialized()
-    assert not store.is_seen(item.key)
+    assert not store.is_listing_seen(item)
     assert not store.is_processed("ebay:test", item.key)
     store.mark_seen(item, sent=True)
     store.mark_processed("ebay:test", item.key)
@@ -45,7 +45,7 @@ def test_json_state_round_trip_and_indexes(tmp_path: Path):
     assert not path.with_name("listings.json.tmp").exists()
 
     reopened = StateStore(path)
-    assert reopened.is_seen(item.key)
+    assert reopened.is_listing_seen(item)
     assert reopened.is_processed("ebay:test", item.key)
     assert reopened.is_initialized()
     reopened.close()
@@ -148,7 +148,8 @@ def test_sqlite_history_is_migrated_without_losing_duplicate_protection(tmp_path
 
     json_path = tmp_path / "listings.json"
     store = StateStore(json_path, legacy_sqlite_path=legacy)
-    assert store.is_seen(key)
+    migrated = Listing("vinted", "www.vinted.test", "123", "Title", "https://example.test")
+    assert store.is_listing_seen(migrated)
     assert store.is_processed("vinted:test", key)
     assert store.is_initialized()
     assert json_path.exists()

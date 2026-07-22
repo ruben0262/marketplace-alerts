@@ -18,6 +18,18 @@ LOGGER = logging.getLogger(__name__)
 
 
 class Monitor:
+    """Polls each marketplace and reports genuinely new matches to Telegram.
+
+    Contract for every listing a search returns:
+      1. Skip it if its product ID is already handled (sent before) or already
+         evaluated this scope, or if it fails the brand/keyword/size filters.
+      2. On the very first run ever, silently seed the surviving matches so the
+         pre-existing backlog is not announced. This is one-time and app-wide;
+         retuning a search never re-seeds.
+      3. Otherwise send it, and only mark it seen once the send succeeds — a
+         failed send is retried on the next cycle rather than lost.
+    """
+
     def __init__(
         self,
         config: Config,

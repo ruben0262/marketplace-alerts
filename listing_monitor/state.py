@@ -262,13 +262,6 @@ class StateStore:
             self._initialized = True
             self._dirty = True
 
-    def is_seen(self, key: str) -> bool:
-        """Backward-compatible check for either a product key or old compound listing key."""
-        if key in self._handled_products:
-            return True
-        parts = key.split(":", 2)
-        return len(parts) == 3 and self.product_key(parts[0], parts[2]) in self._handled_products
-
     def is_listing_seen(self, listing: Listing) -> bool:
         return self.product_key(listing.source, listing.listing_id) in self._handled_products
 

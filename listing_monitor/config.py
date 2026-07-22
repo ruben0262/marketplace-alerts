@@ -31,7 +31,6 @@ class AppConfig:
 class TelegramConfig:
     bot_token: str
     chat_id: str
-    max_images: int = 5
     disable_notification: bool = False
     min_send_interval_seconds: float = 1.1
 
@@ -206,9 +205,6 @@ def load_config(path: Path) -> Config:
     telegram = TelegramConfig(
         bot_token=bot_token,
         chat_id=chat_id,
-        max_images=_positive_int(
-            telegram_raw.get("max_images", 5), "telegram.max_images", maximum=10
-        ),
         disable_notification=bool(telegram_raw.get("disable_notification", False)),
         min_send_interval_seconds=min_send_interval,
     )

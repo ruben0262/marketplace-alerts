@@ -114,43 +114,31 @@ class TelegramPublisher:
                 await self._send_photo(listing, image)
             else:
                 await self._send_text(listing)
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 429:
+        except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as exc:
+            rate_limited = (
+                isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429
+            )
+            if rate_limited or not image:
                 raise
-            if image:
-                LOGGER.warning("Telegram could not fetch listing image; sending text: %s", exc)
-                await self._send_text(listing)
-            else:
-                raise
-        except (httpx.RequestError, ValueError) as exc:
-            if image:
-                LOGGER.warning("Telegram could not fetch listing image; sending text: %s", exc)
-                await self._send_text(listing)
-            else:
-                raise
+            # A rejected image URL must not lose the alert; retry as a plain text message.
+            LOGGER.warning("Telegram could not fetch listing image; sending text: %s", exc)
+            await self._send_text(listing)
 
-    async def _request(self, method: str, payload: dict, *, message_count: int = 1) -> None:
+    async def _request(self, method: str, payload: dict) -> None:
         async with self._send_lock:
             delay = self._next_send_at - time.monotonic()
             if delay > 0:
                 await asyncio.sleep(delay)
             try:
-                await self.http.request_json(
-                    "POST",
-                    f"{self.base_url}/{method}",
-                    json=payload,
-                )
+                await self.http.request_json("POST", f"{self.base_url}/{method}", json=payload)
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 429:
                     retry_after = retry_after_seconds(exc.response)
                     self._next_send_at = time.monotonic() + max(
-                        retry_after or 0,
-                        self.config.min_send_interval_seconds,
+                        retry_after or 0, self.config.min_send_interval_seconds
                     )
                 raise
-            self._next_send_at = time.monotonic() + (
-                self.config.min_send_interval_seconds * max(1, message_count)
-            )
+            self._next_send_at = time.monotonic() + self.config.min_send_interval_seconds
 
     async def _send_photo(self, listing: Listing, image: str) -> None:
         payload = {
