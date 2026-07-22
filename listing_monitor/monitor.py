@@ -68,6 +68,7 @@ class Monitor:
             stall_timeout = cycle_timeout + self.config.app.poll_interval_seconds + 120.0
             heartbeat = Heartbeat(stall_timeout)
             heartbeat.start()
+            LOGGER.info("Heartbeat watchdog armed; restart if no progress for %.0fs", stall_timeout)
         while True:
             if heartbeat:
                 heartbeat.beat()
