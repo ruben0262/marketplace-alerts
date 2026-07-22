@@ -13,6 +13,7 @@ from .models import Listing
 from .state import StateStore
 from .telegram import TelegramPublisher
 from .translation import TranslationService
+from .watchdog import Heartbeat
 
 LOGGER = logging.getLogger(__name__)
 
@@ -60,7 +61,16 @@ class Monitor:
         # Safety net: abort a cycle that runs far longer than a healthy one (e.g. an
         # adapter request that hangs despite its own timeout) so the loop never freezes.
         cycle_timeout = max(300.0, self.config.app.poll_interval_seconds * 3)
+        # Last-resort recovery: a wedged native call can block the event loop so even
+        # cycle_timeout cannot fire. A separate-thread heartbeat force-restarts then.
+        heartbeat = None
+        if not once:
+            stall_timeout = cycle_timeout + self.config.app.poll_interval_seconds + 120.0
+            heartbeat = Heartbeat(stall_timeout)
+            heartbeat.start()
         while True:
+            if heartbeat:
+                heartbeat.beat()
             try:
                 await asyncio.wait_for(self.poll_once(), timeout=cycle_timeout)
             except TimeoutError:
