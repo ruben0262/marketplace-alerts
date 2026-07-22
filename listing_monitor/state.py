@@ -22,7 +22,9 @@ class StateStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.products: dict[str, dict[str, Any]] = {}
         self._handled_products: set[str] = set()
-        self._initialized: set[str] = set()
+        # One-time, app-wide seed flag. Once the first run has silently absorbed the
+        # pre-existing backlog, every later match is reported, even after filters change.
+        self._initialized: bool = False
         self._processed: dict[str, set[str]] = {}
         self._dirty = False
 
@@ -55,16 +57,24 @@ class StateStore:
         if not isinstance(payload, dict) or payload.get("version") not in {1, STATE_VERSION}:
             raise RuntimeError(f"Unsupported or invalid state file: {self.path}")
 
-        initialized = payload.get("initialized_scopes", [])
         processed = payload.get("processed_by_scope", {})
-        if not isinstance(initialized, list) or not isinstance(processed, dict):
+        if not isinstance(processed, dict):
             raise RuntimeError(f"Invalid state indexes in {self.path}")
         if any(not isinstance(keys, list) for keys in processed.values()):
             raise RuntimeError(f"Invalid processed scope in {self.path}")
-        self._initialized = {str(scope) for scope in initialized}
         self._processed = {
             str(scope): {str(key) for key in keys} for scope, keys in processed.items()
         }
+        # Prefer the global flag; fall back to any prior per-scope init or stored
+        # products so upgrading an existing state file never replays the backlog.
+        initialized_flag = payload.get("initialized")
+        if initialized_flag is None:
+            initialized_flag = bool(
+                payload.get("initialized_scopes")
+                or payload.get("products")
+                or payload.get("items")
+            )
+        self._initialized = bool(initialized_flag)
 
         if payload["version"] == 1:
             items = payload.get("items", {})
@@ -213,10 +223,11 @@ class StateStore:
                 for scope, key in rows:
                     self._processed.setdefault(str(scope), set()).add(str(key))
             if self._table_exists(connection, "metadata"):
-                rows = connection.execute(
-                    "SELECT key FROM metadata WHERE key LIKE 'initialized:%' AND value = '1'"
-                )
-                self._initialized.update(str(key).removeprefix("initialized:") for (key,) in rows)
+                row = connection.execute(
+                    "SELECT 1 FROM metadata WHERE key LIKE 'initialized:%' AND value = '1' LIMIT 1"
+                ).fetchone()
+                if row is not None:
+                    self._initialized = True
         finally:
             connection.close()
         self._dirty = True
@@ -243,12 +254,12 @@ class StateStore:
                 self._dirty = True
         return new_product_count
 
-    def is_initialized(self, scope: str) -> bool:
-        return scope in self._initialized
+    def is_initialized(self) -> bool:
+        return self._initialized
 
-    def mark_initialized(self, scope: str) -> None:
-        if scope not in self._initialized:
-            self._initialized.add(scope)
+    def mark_initialized(self) -> None:
+        if not self._initialized:
+            self._initialized = True
             self._dirty = True
 
     def is_seen(self, key: str) -> bool:
@@ -301,7 +312,7 @@ class StateStore:
         payload = {
             "version": STATE_VERSION,
             "products": products,
-            "initialized_scopes": sorted(self._initialized),
+            "initialized": self._initialized,
             "processed_by_scope": {
                 scope: sorted(keys) for scope, keys in sorted(self._processed.items())
             },

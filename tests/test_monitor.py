@@ -96,7 +96,7 @@ async def test_dry_run_does_not_change_state(tmp_path: Path):
     monitor = Monitor(config, [FakeAdapter([item])], publisher, state, dry_run=True)
     await monitor.poll_once()
     scope = monitor._scope("ebay", config.searches[0])
-    assert not state.is_initialized(scope)
+    assert not state.is_initialized()
     assert not state.is_seen(item.key)
     assert not state.is_processed(scope, item.key)
     state.close()
@@ -118,6 +118,29 @@ async def test_initial_cycle_seeds_then_new_item_is_sent(tmp_path: Path):
     assert publisher.sent == [new]
     await monitor.poll_once()
     assert publisher.sent == [new]
+    state.close()
+
+
+@pytest.mark.asyncio
+async def test_retuning_search_does_not_reseed_new_matches(tmp_path: Path):
+    # Regression: seeding is one-time and app-wide, not per-scope. Changing a
+    # search's filters must not silently absorb genuinely new items unsent.
+    seeded = Listing("ebay", "EBAY_GB", "1", "Old jacket", "https://example.test/1")
+    fresh = Listing("ebay", "EBAY_GB", "2", "Fresh jacket", "https://example.test/2")
+    config = make_config(tmp_path / "state.json")
+    state = StateStore(config.app.state_file)
+    adapter = FakeAdapter([seeded])
+    publisher = FakePublisher()
+    monitor = Monitor(config, [adapter], publisher, state)
+
+    await monitor.poll_once()
+    assert publisher.sent == []  # first run seeds the pre-existing backlog silently
+
+    # Retune the search -> new scope. A brand-new match must be reported, not reseeded.
+    config.searches[0].exclude_keywords = ["poster"]
+    adapter.items.append(fresh)
+    await monitor.poll_once()
+    assert publisher.sent == [fresh]
     state.close()
 
 

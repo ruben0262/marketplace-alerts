@@ -63,15 +63,17 @@ class Monitor:
         self._cycle_listing_cache.clear()
         self._cycle_search_cache.clear()
         successful_searches = 0
+        # Seed silently only on the very first run ever; afterwards every match that
+        # passes the filters is reported and marked seen only once the send succeeds.
+        # This is app-wide, so retuning a search never re-absorbs new items unsent.
+        initial_seed = (
+            not self.state.is_initialized() and not self.config.app.send_existing_on_start
+        )
         for adapter in self.adapters:
             for search in self.config.searches:
                 if adapter.name not in search.sources:
                     continue
                 scope = self._scope(adapter.name, search)
-                initial_seed = (
-                    not self.state.is_initialized(scope)
-                    and not self.config.app.send_existing_on_start
-                )
                 try:
                     remote_scope = self._remote_scope(adapter.name, search)
                     listings = self._cycle_search_cache.get(remote_scope)
@@ -98,8 +100,11 @@ class Monitor:
                     adapter, search, listings, scope=scope, initial_seed=initial_seed
                 )
                 if not self.dry_run:
-                    self.state.mark_initialized(scope)
                     self.state.flush()
+        if not self.dry_run and successful_searches:
+            # Only after a full successful cycle do we consider the backlog seeded.
+            self.state.mark_initialized()
+            self.state.flush()
         if not successful_searches:
             LOGGER.warning("No searches completed successfully; monitor remains uninitialized")
 
