@@ -5,6 +5,7 @@ import hashlib
 import logging
 import random
 from collections.abc import Sequence
+from pathlib import Path
 
 from .config import Config, SearchConfig
 from .filtering import matches_required_brand, matches_search
@@ -50,6 +51,14 @@ class Monitor:
         self._cycle_listing_cache: dict[str, Listing] = {}
         self._cycle_search_cache: dict[str, list[Listing]] = {}
 
+    @staticmethod
+    def _touch(path: Path) -> None:
+        """Refresh the liveness file the healthcheck watches; ignore I/O errors."""
+        try:
+            path.touch()
+        except OSError:
+            pass
+
     async def close(self) -> None:
         closers = [*(adapter.close() for adapter in self.adapters), self.publisher.close()]
         if self.translator:
@@ -64,6 +73,10 @@ class Monitor:
         # Last-resort recovery: a wedged native call can block the event loop so even
         # cycle_timeout cannot fire. A separate-thread heartbeat force-restarts then.
         heartbeat = None
+        # Liveness file for the external Docker healthcheck: refreshed by the main
+        # loop, so if a native call wedges the loop the file goes stale and the
+        # daemon-run healthcheck (immune to the frozen process) fails.
+        liveness = self.config.app.state_file.parent / "heartbeat"
         if not once:
             stall_timeout = cycle_timeout + self.config.app.poll_interval_seconds + 120.0
             heartbeat = Heartbeat(stall_timeout)
@@ -72,6 +85,7 @@ class Monitor:
         while True:
             if heartbeat:
                 heartbeat.beat()
+            self._touch(liveness)
             try:
                 await asyncio.wait_for(self.poll_once(), timeout=cycle_timeout)
             except TimeoutError:
@@ -79,6 +93,7 @@ class Monitor:
             except Exception:
                 # Never let one bad cycle kill a 24/7 monitor; log and keep polling.
                 LOGGER.exception("Polling cycle failed; continuing to next poll")
+            self._touch(liveness)
             if once:
                 return
             delay = self.config.app.poll_interval_seconds + random.uniform(

@@ -15,3 +15,13 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # Restarts any container that reports unhealthy, including marketplace-alerts when
+  # its heartbeat healthcheck fails because the event loop wedged on a native call.
+  autoheal:
+    image: willfarrell/autoheal:latest
+    restart: always
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: all
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
