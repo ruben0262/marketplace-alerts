@@ -26,10 +26,12 @@ def test_caption_escapes_html_and_respects_limit():
     )
     caption = format_caption(item)
     assert "&lt;rare&gt;" in caption
-    assert "Listing ID:" in caption
-    assert "<code>1</code>" in caption
-    assert '<a href="https://example.test/item?a=1&amp;b=2">Visit product here</a>' in caption
+    # No links anywhere in the body; the product link is an inline button instead.
+    assert "href=" not in caption
+    assert "<a " not in caption
+    assert "example.test" not in caption
     assert "<b>Condition:</b> Very good" in caption
+    assert "<b>Marketplace:</b> EBAY_GB" in caption
     assert len(caption) <= 1024
 
 
@@ -79,6 +81,58 @@ async def test_http_client_honors_telegram_retry_after(monkeypatch: pytest.Monke
     assert result == {"ok": True}
     assert 4 <= sleep_delays[0] <= 4.5
     await client.close()
+
+
+@pytest.mark.asyncio
+async def test_send_photo_attaches_visit_product_button_without_links():
+    publisher = TelegramPublisher(
+        TelegramConfig("token", "chat"),
+        AppConfig(request_retries=1),
+        "test",
+    )
+    publisher._request = AsyncMock()
+    listing = Listing(
+        "vinted",
+        "www.vinted.test",
+        "42",
+        "Example hoodie",
+        "https://www.vinted.test/items/42-example",
+        image_urls=["https://images.test/42.jpg"],
+    )
+
+    await publisher.send(listing)
+
+    method, payload = publisher._request.await_args.args
+    assert method == "sendPhoto"
+    assert payload["reply_markup"]["inline_keyboard"] == [
+        [{"text": "Visit product", "url": "https://www.vinted.test/items/42-example"}]
+    ]
+    assert "href=" not in payload["caption"]
+    await publisher.close()
+
+
+@pytest.mark.asyncio
+async def test_send_text_used_when_no_images_still_has_button():
+    publisher = TelegramPublisher(
+        TelegramConfig("token", "chat"),
+        AppConfig(request_retries=1),
+        "test",
+    )
+    publisher._request = AsyncMock()
+    listing = Listing(
+        "ebay",
+        "EBAY_GB",
+        "7",
+        "Example tee",
+        "https://example.test/item/7",
+    )
+
+    await publisher.send(listing)
+
+    method, payload = publisher._request.await_args.args
+    assert method == "sendMessage"
+    assert payload["reply_markup"]["inline_keyboard"][0][0]["text"] == "Visit product"
+    await publisher.close()
 
 
 @pytest.mark.asyncio

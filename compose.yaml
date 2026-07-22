@@ -2,7 +2,7 @@ services:
   marketplace-alerts:
     build: .
     image: marketplace-alerts:latest
-    restart: unless-stopped
+    restart: always
     init: true
     env_file:
       - .env

@@ -62,17 +62,16 @@ def _truncate_and_escape(value: str, limit: int) -> str:
 
 def format_caption(listing: Listing, *, max_length: int = 1024) -> str:
     heading = f"<b>{html.escape(listing.title)}</b>"
-    product_url = html.escape(listing.url, quote=True)
-    marketplace = html.escape(listing.marketplace)
+    # No links in the body; the product link is delivered as an inline button.
     fields = [
         f"<b>Price:</b> {html.escape(_format_price(listing.price, listing.currency))}",
-        f'<b>Source:</b> <a href="{product_url}">Visit product here</a> ({marketplace})',
-        f"<b>Listing ID:</b> <code>{html.escape(listing.listing_id)}</code>",
-        f"<b>Search:</b> {html.escape(listing.search_name)}",
     ]
     for name in ("Brand", "Size", "Condition", "Color"):
         if value := listing.attributes.get(name):
             fields.append(f"<b>{name}:</b> {html.escape(value)}")
+    fields.append(f"<b>Marketplace:</b> {html.escape(listing.marketplace)}")
+    if listing.search_name:
+        fields.append(f"<b>Search:</b> {html.escape(listing.search_name)}")
     if listing.created_at:
         fields.append(f"<b>Listed:</b> {format_relative_age(listing.created_at)}")
     if listing.seller:
@@ -101,25 +100,30 @@ class TelegramPublisher:
     async def close(self) -> None:
         await self.http.close()
 
+    @staticmethod
+    def _product_button(listing: Listing) -> dict | None:
+        """Inline 'Visit product' button; None when the URL is unusable."""
+        if listing.url.startswith("http"):
+            return {"inline_keyboard": [[{"text": "Visit product", "url": listing.url}]]}
+        return None
+
     async def send(self, listing: Listing) -> None:
-        images = listing.image_urls[: self.config.max_images]
+        image = listing.image_urls[0] if listing.image_urls else None
         try:
-            if len(images) >= 2:
-                await self._send_album(listing, images)
-            elif images:
-                await self._send_photo(listing, images[0])
+            if image:
+                await self._send_photo(listing, image)
             else:
                 await self._send_text(listing)
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 429:
                 raise
-            if images:
+            if image:
                 LOGGER.warning("Telegram could not fetch listing image; sending text: %s", exc)
                 await self._send_text(listing)
             else:
                 raise
         except (httpx.RequestError, ValueError) as exc:
-            if images:
+            if image:
                 LOGGER.warning("Telegram could not fetch listing image; sending text: %s", exc)
                 await self._send_text(listing)
             else:
@@ -148,43 +152,26 @@ class TelegramPublisher:
                 self.config.min_send_interval_seconds * max(1, message_count)
             )
 
-    async def _send_album(self, listing: Listing, images: list[str]) -> None:
-        media = []
-        for index, url in enumerate(images):
-            entry = {"type": "photo", "media": url}
-            if index == 0:
-                entry.update({"caption": format_caption(listing), "parse_mode": "HTML"})
-            media.append(entry)
-        await self._request(
-            "sendMediaGroup",
-            {
-                "chat_id": self.config.chat_id,
-                "media": media,
-                "disable_notification": self.config.disable_notification,
-            },
-            message_count=len(images),
-        )
-
     async def _send_photo(self, listing: Listing, image: str) -> None:
-        await self._request(
-            "sendPhoto",
-            {
-                "chat_id": self.config.chat_id,
-                "photo": image,
-                "caption": format_caption(listing),
-                "parse_mode": "HTML",
-                "disable_notification": self.config.disable_notification,
-            },
-        )
+        payload = {
+            "chat_id": self.config.chat_id,
+            "photo": image,
+            "caption": format_caption(listing),
+            "parse_mode": "HTML",
+            "disable_notification": self.config.disable_notification,
+        }
+        if button := self._product_button(listing):
+            payload["reply_markup"] = button
+        await self._request("sendPhoto", payload)
 
     async def _send_text(self, listing: Listing) -> None:
-        await self._request(
-            "sendMessage",
-            {
-                "chat_id": self.config.chat_id,
-                "text": format_caption(listing, max_length=4096),
-                "parse_mode": "HTML",
-                "disable_web_page_preview": False,
-                "disable_notification": self.config.disable_notification,
-            },
-        )
+        payload = {
+            "chat_id": self.config.chat_id,
+            "text": format_caption(listing, max_length=4096),
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+            "disable_notification": self.config.disable_notification,
+        }
+        if button := self._product_button(listing):
+            payload["reply_markup"] = button
+        await self._request("sendMessage", payload)

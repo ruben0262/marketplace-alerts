@@ -46,7 +46,11 @@ class Monitor:
 
     async def run(self, *, once: bool = False) -> None:
         while True:
-            await self.poll_once()
+            try:
+                await self.poll_once()
+            except Exception:
+                # Never let one bad cycle kill a 24/7 monitor; log and keep polling.
+                LOGGER.exception("Polling cycle failed; continuing to next poll")
             if once:
                 return
             delay = self.config.app.poll_interval_seconds + random.uniform(
