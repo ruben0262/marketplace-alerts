@@ -265,6 +265,13 @@ class StateStore:
     def is_listing_seen(self, listing: Listing) -> bool:
         return self.product_key(listing.source, listing.listing_id) in self._handled_products
 
+    def is_product_known(self, listing: Listing) -> bool:
+        """Has this product ID ever been recorded, on any regional domain?
+
+        Broader than is_listing_seen, which only covers products already sent.
+        """
+        return self.product_key(listing.source, listing.listing_id) in self.products
+
     def is_processed(self, scope: str, key: str) -> bool:
         return key in self._processed.get(scope, set())
 

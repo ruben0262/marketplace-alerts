@@ -29,6 +29,14 @@ sources:
     # Vinted catalog already carries brand and size, so detail lookups are optional.
     fetch_item_details: false
     # Optional residential proxy via VINTED_PROXY in .env if a datacenter IP is blocked.
+    # Everything below trades proxy bandwidth against how large a burst of new
+    # listings one cycle can absorb. Results are newest-first, so a short first
+    # page ("probe") is enough to tell whether anything new exists at all; full
+    # pages are fetched only when every probed listing is unseen. Set
+    # probe_per_page to 0 to disable that and always fetch full pages.
+    probe_per_page: 5
+    results_per_page: 20
+    pages_per_search: 4
     sites:
       - url: https://www.vinted.co.uk
         name: Vinted UK

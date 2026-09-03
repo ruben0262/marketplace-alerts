@@ -25,6 +25,12 @@ class VintedAdapter:
     # during a long eight-site scan instead of only once per polling cycle.
     on_progress: Callable[[], None] = staticmethod(lambda: None)
 
+    # Set by the monitor; answers "has this product been recorded before?" so a scan can
+    # stop as soon as it reaches known items. Takes the listing rather than a key because
+    # product identity ignores the regional domain, and the state store owns that rule.
+    # Defaults to "nothing is known", which degrades to a full unassisted scan.
+    is_known: Callable[[Listing], bool] = staticmethod(lambda listing: False)
+
     def __init__(self, config: VintedConfig, app: AppConfig, user_agent: str) -> None:
         self.config = config
         self._clients: dict[str, VintedClient] = {}
@@ -115,6 +121,45 @@ class VintedAdapter:
         params.extend(("catalog[]", catalog_id) for catalog_id in search.vinted_catalog_ids)
         return f"{site.url}/catalog?{urlencode(params)}"
 
+    async def _fetch_page(
+        self, client: VintedClient, catalog_url: str, *, page: int, per_page: int
+    ) -> Any:
+        await self._throttle()
+        return await asyncio.wait_for(
+            client.search_items(
+                url=catalog_url,
+                page=page,
+                per_page=per_page,
+                order="newest_first",
+                raw_data=True,
+            ),
+            timeout=self._request_timeout,
+        )
+
+    def _absorb(
+        self,
+        items: list[Any],
+        listings: dict[str, Listing],
+        *,
+        marketplace: str,
+        search_name: str,
+        base_url: str,
+    ) -> tuple[int, int]:
+        """Collect parsable items; return (parsed, unseen) so callers can stop early."""
+        parsed = 0
+        unseen = 0
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            listing = self._parse_item(item, marketplace, search_name, base_url)
+            if not listing:
+                continue
+            parsed += 1
+            if not self.is_known(listing):
+                unseen += 1
+            listings[listing.key] = listing
+        return parsed, unseen
+
     async def search(self, search: SearchConfig) -> list[Listing]:
         listings: dict[str, Listing] = {}
         completed_requests = 0
@@ -122,22 +167,45 @@ class VintedAdapter:
         if not available_sites:
             raise MarketplaceUnavailableError(self._unavailable_message())
 
+        probe_size = self.config.probe_per_page
+        # A probe only helps while it is strictly cheaper than the page it replaces.
+        probing = 0 < probe_size < self.config.results_per_page
+
         for site in available_sites:
             client = self._client(site)
             marketplace = urlparse(site.url).netloc
             catalog_url = self._catalog_url(site, search)
+            absorb = {
+                "marketplace": marketplace,
+                "search_name": search.name,
+                "base_url": site.url,
+            }
+
+            if probing:
+                # newest_first puts anything new at the front, so a short first page is
+                # enough to answer "is there anything here we have not already seen?".
+                try:
+                    items = await self._fetch_page(client, catalog_url, page=1, per_page=probe_size)
+                except Exception as exc:
+                    self._mark_unavailable(site, exc)
+                    continue
+                self._unavailable_until.pop(site.url, None)
+                completed_requests += 1
+                if not isinstance(items, list):
+                    continue
+                parsed, unseen = self._absorb(items, listings, **absorb)
+                # One known item means the boundary lies inside the probe: everything
+                # older has been recorded already, so no further page can be new.
+                if not parsed or unseen < parsed or len(items) < probe_size:
+                    continue
+                LOGGER.info(
+                    "%s: all %d probed listings are new; fetching full pages", site.name, parsed
+                )
+
             for page in range(1, self.config.pages_per_search + 1):
                 try:
-                    await self._throttle()
-                    items = await asyncio.wait_for(
-                        client.search_items(
-                            url=catalog_url,
-                            page=page,
-                            per_page=self.config.results_per_page,
-                            order="newest_first",
-                            raw_data=True,
-                        ),
-                        timeout=self._request_timeout,
+                    items = await self._fetch_page(
+                        client, catalog_url, page=page, per_page=self.config.results_per_page
                     )
                 except Exception as exc:
                     self._mark_unavailable(site, exc)
@@ -146,13 +214,11 @@ class VintedAdapter:
                 completed_requests += 1
                 if not isinstance(items, list):
                     break
-                for item in items:
-                    if not isinstance(item, dict):
-                        continue
-                    listing = self._parse_item(item, marketplace, search.name, site.url)
-                    if listing:
-                        listings[listing.key] = listing
+                parsed, unseen = self._absorb(items, listings, **absorb)
                 if len(items) < self.config.results_per_page:
+                    break
+                # Reached previously recorded IDs, so later pages are older still.
+                if parsed and unseen < parsed:
                     break
 
         if not completed_requests:

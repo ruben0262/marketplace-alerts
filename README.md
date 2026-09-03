@@ -304,6 +304,24 @@ CAPTCHA. The official
 [Vinted Pro Integrations API](https://pro-docs.svc.vinted.com/) manages a Pro seller's own inventory
 and webhooks; it does not provide public catalog discovery for this monitor.
 
+### Keeping proxy traffic down
+
+A metered residential proxy bills by the gigabyte, and catalog JSON is the only traffic that goes
+through it: eBay, DeepL, and Telegram all connect directly, and Telegram fetches listing images
+itself from their URLs. Three settings control the bill:
+
+| Setting | Effect |
+| --- | --- |
+| `probe_per_page` | Size of the cheap first page used only to answer "is anything new here?". Because results are newest-first, one already-recorded product on that page proves everything older is known, so no full page is fetched. `0` disables probing. |
+| `results_per_page` | Size of a full page, fetched only when every probed product is unseen. |
+| `pages_per_search` | Maximum full pages per site. Pagination stops early at the first page containing a known product. |
+
+Product identity ignores the regional domain, so the same item found on several Vinted sites is
+one product. Check which of your configured sites actually contribute unique alerts before adding
+more: each extra site is a full extra request every cycle, and regional EU catalogs overlap
+heavily. Measure it against `data/listings.json` rather than guessing, using each record's
+`marketplaces` list.
+
 Use a sticky residential proxy session when possible. If the proxy changes its exit IP between the
 cookie refresh and catalog/detail request, Vinted may reject the session. When item-detail access
 fails, the monitor pauses detail lookups for that site and continues posting the catalog title,
