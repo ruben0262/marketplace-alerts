@@ -75,6 +75,9 @@ class VintedConfig:
     sites: list[VintedSite] = field(default_factory=list)
     pages_per_search: int = 2
     results_per_page: int = 40
+    # Size of the cheap "anything new here?" first page. Zero, or any value from
+    # results_per_page upwards, disables probing and fetches full pages directly.
+    probe_per_page: int = 5
     fetch_item_details: bool = True
     cookies_dir: Path = Path("data/vinted-cookies")
     retry_cooldown_seconds: int = 900
@@ -125,6 +128,17 @@ def _positive_int(value: Any, location: str, *, maximum: int) -> int:
         raise ConfigError(f"{location} must be an integer") from exc
     if not 1 <= parsed <= maximum:
         raise ConfigError(f"{location} must be between 1 and {maximum}")
+    return parsed
+
+
+def _non_negative_int(value: Any, location: str, *, maximum: int) -> int:
+    """Like _positive_int, but 0 is meaningful: it switches the feature off."""
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"{location} must be an integer") from exc
+    if not 0 <= parsed <= maximum:
+        raise ConfigError(f"{location} must be between 0 and {maximum}")
     return parsed
 
 
@@ -275,6 +289,9 @@ def load_config(path: Path) -> Config:
         ),
         results_per_page=_positive_int(
             vinted_raw.get("results_per_page", 40), "sources.vinted.results_per_page", maximum=96
+        ),
+        probe_per_page=_non_negative_int(
+            vinted_raw.get("probe_per_page", 5), "sources.vinted.probe_per_page", maximum=96
         ),
         fetch_item_details=bool(vinted_raw.get("fetch_item_details", True)),
         cookies_dir=Path(str(vinted_raw.get("cookies_dir", "data/vinted-cookies"))),

@@ -56,6 +56,10 @@ class Monitor:
         for adapter in self.adapters:
             if hasattr(adapter, "on_progress"):
                 adapter.on_progress = self._progress
+            # Let an adapter stop paginating at the first already-recorded product
+            # instead of pulling every configured page on every cycle.
+            if hasattr(adapter, "is_known"):
+                adapter.is_known = self.state.is_product_known
 
     def _progress(self) -> None:
         """Signal that the loop is still moving: feed the watchdog and liveness file."""

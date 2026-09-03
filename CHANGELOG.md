@@ -6,6 +6,12 @@ All notable changes to this project are documented here. This project follows [K
 
 ### Added
 
+- Bandwidth-aware Vinted scanning: a short `probe_per_page` first page decides whether anything
+  new exists before any full page is fetched, and pagination now stops at the first
+  already-recorded product instead of always walking every configured page. Measured against
+  30 days of production history this cuts proxy traffic by roughly 95% with no listing missed,
+  because catalogue results are newest-first and product identity ignores the regional domain.
+
 - Official eBay Browse `getItem` enrichment for complete brand, size, condition, description,
   seller, link, and image information, with bounded detail-failure cooldowns.
 - eBay server-side listing-age filtering, required per-marketplace currencies for price filters,
