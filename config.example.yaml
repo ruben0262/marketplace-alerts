@@ -36,7 +36,11 @@ sources:
     # probe_per_page to 0 to disable that and always fetch full pages.
     probe_per_page: 5
     results_per_page: 15
-    pages_per_search: 2
+    # A cap, not a fetch count: later pages are requested only while every item on
+    # the previous page was unseen and that page came back full. Size it against
+    # poll_interval_seconds, because a longer interval means a bigger batch per
+    # cycle, and anything past results_per_page * pages_per_search is lost for good.
+    pages_per_search: 4
     # Product IDs are global, so regional sites largely return the same items and
     # each extra site is a full extra request per cycle. Measured on live catalog
     # results, fr/de/nl overlap ~90%, while co.uk and hu are disjoint from every
