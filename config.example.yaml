@@ -35,15 +35,20 @@ sources:
     # pages are fetched only when every probed listing is unseen. Set
     # probe_per_page to 0 to disable that and always fetch full pages.
     probe_per_page: 5
-    results_per_page: 20
-    pages_per_search: 4
+    results_per_page: 15
+    pages_per_search: 2
+    # Product IDs are global, so regional sites largely return the same items and
+    # each extra site is a full extra request per cycle. Measured on live catalog
+    # results, fr/de/nl overlap ~90%, while co.uk and hu are disjoint from every
+    # other site: these three cover the widest catalog for the fewest requests.
+    # Verify for your own searches with each record's marketplaces list.
     sites:
       - url: https://www.vinted.co.uk
         name: Vinted UK
       - url: https://www.vinted.fr
         name: Vinted France
-      - url: https://www.vinted.de
-        name: Vinted Germany
+      - url: https://www.vinted.hu
+        name: Vinted Hungary
 
 searches:
   # One search per thing you track. required_brands matches structured brand data;
