@@ -5,7 +5,7 @@ import logging
 import time
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from vinted import VintedClient, VintedError
 
@@ -14,6 +14,42 @@ from ..models import Listing, parse_datetime, parse_decimal
 from .base import MarketplaceUnavailableError
 
 LOGGER = logging.getLogger(__name__)
+
+
+class GatewayVintedClient(VintedClient):
+    """VintedClient whose catalog search uses the endpoint the Vinted website uses today.
+
+    vinted-api-kit calls www.<site>/api/v2/catalog/items (1.0.x) or
+    www.<site>/web/gateway/svc-catalogue/items (1.1.x). Both return 404 since Vinted moved
+    catalog search to the api.<site> gateway host, which the website's own JavaScript
+    resolves (resolveApiGatewayUrl). Cookies, proxy, and token refresh still come from the
+    library's session.
+    """
+
+    async def search_items(
+        self, *, url: str, page: int, per_page: int, order: str, raw_data: bool = True
+    ) -> list[dict[str, Any]]:
+        session = self._session
+        session.configure_from_url(url)
+        parsed = urlparse(url)
+        host = parsed.netloc.lower()
+        if host.startswith("www.") and host != "www.vinted.com":
+            host = host[4:]
+        query = parse_qs(parsed.query)
+        params: dict[str, Any] = {
+            "search_text": " ".join(query.get("search_text", [])),
+            "page": page,
+            "per_page": per_page,
+            "order": order,
+            "time": int(time.time()),
+        }
+        for key in ("price_from", "price_to"):
+            if query.get(key):
+                params[key] = query[key][0]
+        if query.get("catalog[]"):
+            params["catalog"] = ",".join(query["catalog[]"])
+        response = await session.request(f"https://api.{host}/svc-catalogue/items", params=params)
+        return response.json().get("items", [])
 
 
 class VintedAdapter:
@@ -68,7 +104,7 @@ class VintedAdapter:
         hostname = urlparse(site.url).netloc.replace(":", "_")
         cookies_dir = self.config.cookies_dir / hostname
         cookies_dir.mkdir(parents=True, exist_ok=True)
-        client = VintedClient(
+        client = GatewayVintedClient(
             proxy=self.config.proxy or None,
             cookies_dir=cookies_dir,
             persist_cookies=True,
@@ -307,8 +343,8 @@ class VintedAdapter:
             attributes["Brand"] = brand
         if size:
             attributes["Size"] = size
-        if status := item.get("status"):
-            attributes["Condition"] = str(status)
+        if condition := VintedAdapter._condition(item):
+            attributes["Condition"] = condition
         return Listing(
             source="vinted",
             marketplace=marketplace,
@@ -325,9 +361,33 @@ class VintedAdapter:
         )
 
     @staticmethod
+    def _item_box(item: dict[str, Any]) -> tuple[str, str, str]:
+        """Return (brand, size, condition) from the card text of current catalog results.
+
+        The gateway catalog no longer has brand_title/size_title/status fields. Its
+        item_box holds the card lines instead: first_line is the brand, or the title when
+        the item has no brand, and second_line is "size · condition", or just the
+        condition, which Vinted requires while size is optional.
+        """
+        box = item.get("item_box") or {}
+        if not isinstance(box, dict):
+            return "", "", ""
+        first = str(box.get("first_line") or "").strip()
+        brand = first if first and first != str(item.get("title", "")).strip() else ""
+        parts = [part.strip() for part in str(box.get("second_line") or "").split(" · ")]
+        condition = parts[-1] if parts[-1] else ""
+        size = " · ".join(parts[:-1])
+        return brand, size, condition
+
+    @staticmethod
     def _brand(item: dict[str, Any]) -> str:
         brand_dto = item.get("brand_dto") or {}
-        return str(item.get("brand_title") or brand_dto.get("title") or "").strip()
+        brand = item.get("brand_title") or brand_dto.get("title")
+        return str(brand or VintedAdapter._item_box(item)[0]).strip()
+
+    @staticmethod
+    def _condition(item: dict[str, Any]) -> str:
+        return str(item.get("status") or VintedAdapter._item_box(item)[2]).strip()
 
     @staticmethod
     def _size(item: dict[str, Any]) -> str:
@@ -340,7 +400,7 @@ class VintedAdapter:
                 if isinstance(attribute, dict) and attribute.get("code") == "size":
                     value = (attribute.get("data") or {}).get("value")
                     return str(value).strip() if value is not None else ""
-        return ""
+        return VintedAdapter._item_box(item)[1]
 
     @staticmethod
     def _created_at(item: dict[str, Any]):
