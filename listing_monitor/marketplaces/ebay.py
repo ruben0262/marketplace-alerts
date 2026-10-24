@@ -32,6 +32,7 @@ class EbayAdapter:
             timeout=app.request_timeout_seconds,
             retries=app.request_retries,
             user_agent=user_agent,
+            proxy="http://myuser:mypassword@192.168.50.223:8080", # <--- Add your Proxmox gateway here
         )
         self._token = ""
         self._token_expires_at = datetime.min.replace(tzinfo=UTC)

@@ -43,12 +43,13 @@ def retry_after_seconds(response: httpx.Response) -> float | None:
 class HttpClient:
     """Small async JSON client with bounded retries for transient failures."""
 
-    def __init__(self, *, timeout: float, retries: int, user_agent: str) -> None:
+    def __init__(self, *, timeout: float, retries: int, user_agent: str, proxy: str | None = None) -> None:
         self.retries = retries
         self.client = httpx.AsyncClient(
             timeout=timeout,
             follow_redirects=True,
             headers={"User-Agent": user_agent, "Accept": "application/json"},
+            proxy=proxy,  # <--- Pass your proxy gateway here
         )
 
     async def close(self) -> None:
