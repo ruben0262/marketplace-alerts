@@ -26,5 +26,8 @@ cookies/
 .vinted-cookies/
 ebay_debug.py
 
-# Tests kept local only, not tracked in version control.
-tests/
+# JavaScript dependencies, browser reports, and local recovery keys.
+node_modules/
+playwright-report/
+test-results/
+.profile-recovery-key

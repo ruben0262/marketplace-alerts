@@ -56,6 +56,7 @@ class EbayConfig:
     enabled: bool = True
     client_id: str = ""
     client_secret: str = ""
+    proxy: str = ""
     marketplaces: list[EbayMarketplace] = field(default_factory=list)
     pages_per_search: int = 2
     results_per_page: int = 50
@@ -258,6 +259,7 @@ def load_config(path: Path) -> Config:
         enabled=ebay_enabled,
         client_id=os.getenv("EBAY_CLIENT_ID", "").strip(),
         client_secret=os.getenv("EBAY_CLIENT_SECRET", "").strip(),
+        proxy=os.getenv("EBAY_PROXY", "").strip(),
         marketplaces=marketplaces,
         pages_per_search=_positive_int(
             ebay_raw.get("pages_per_search", 2), "sources.ebay.pages_per_search", maximum=20
