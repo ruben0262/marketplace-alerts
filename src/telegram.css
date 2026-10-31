@@ -1,0 +1,48 @@
+.telegram-guide { margin: 18px 0 24px; border-bottom: 1px solid var(--line); padding-bottom: 18px; }
+.telegram-guide summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.telegram-guide .telegram-steps { margin-top: 20px; }
+.telegram-destinations { display: grid; gap: 14px; }
+.telegram-destination { border: 1px solid var(--line); border-radius: 14px; padding: 18px; min-width: 0; }
+.telegram-destination-heading { display: flex; gap: 12px; justify-content: space-between; align-items: flex-start; }
+.telegram-destination h3, .telegram-form h3, .telegram-recovery h3 { font-size: 16px; margin: 0 0 6px; overflow-wrap: anywhere; }
+.telegram-destination-heading p, .telegram-connection-note, .telegram-recovery > p { font-size: 13px; color: var(--muted); line-height: 1.65; }
+.telegram-destination-heading p { margin: 0; }
+.telegram-destination-heading .pill { flex-shrink: 0; }
+.telegram-destination-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-top: 16px; }
+.telegram-connection-note { margin: 12px 0 0; overflow-wrap: anywhere; }
+.telegram-warning { color: var(--warn); }
+.telegram-form { margin-top: 20px; }
+.telegram-form h3 { margin-bottom: 18px; }
+.telegram-add { margin-top: 18px; }
+.telegram-recovery { margin-top: 30px; padding-top: 26px; border-top: 1px solid var(--line); }
+.telegram-recovery > p { margin: 8px 0 18px; }
+.destination-picker { border: 0; padding: 0; margin: 0 0 24px; min-width: 0; }
+.destination-picker legend { font-size: 14px; font-weight: 600; padding: 0; }
+.destination-picker > p, .search-destinations { font-size: 13px; color: var(--muted); line-height: 1.65; }
+.destination-options { display: grid; gap: 9px; margin: 14px 0; }
+.destination-option { display: flex; align-items: center; gap: 12px; padding: 15px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
+.destination-option.selected { border-color: var(--accent); background: color-mix(in srgb, var(--mint) 15%, var(--white)); }
+.destination-option input { width: 17px; height: 17px; accent-color: var(--accent); flex-shrink: 0; }
+.destination-option span { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.destination-option strong { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.destination-option small { font-size: 13px; color: var(--muted); }
+.destination-picker .destination-summary { color: var(--ink); font-weight: 500; overflow-wrap: anywhere; }
+.search-destinations { margin: 0 0 16px; overflow-wrap: anywhere; }
+.search-preview dd { overflow-wrap: anywhere; }
+.connections-workspace { max-width: 960px; }
+.connection-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-bottom: 22px; }
+.connection-tab { min-width: 0; background: var(--white); border: 1px solid var(--line); border-radius: 12px; padding: 16px 10px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; text-align: left; }
+.connection-tab.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.connection-tab > span:last-child { display: grid; gap: 4px; }
+.connection-tab strong { font-size: 14px; }
+.connection-tab small { font-size: 13px; color: var(--muted); }
+.connection-panel .settings-card { width: 100%; }
+.account-profile-link { display: flex; gap: 10px; align-items: center; flex: 1; min-width: 0; }
+.account-profile-link > div { min-width: 0; }
+.account-profile-link strong { font-size: 13px; display: block; overflow: hidden; text-overflow: ellipsis; }
+.account-profile-link > div > span { display: block; font-size: 13px; color: var(--muted); }
+.appearance-preferences { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding-bottom: 24px; margin-bottom: 24px; border-bottom: 1px solid var(--line); }
+.appearance-preferences h3 { font-size: 17px; }
+.appearance-preferences p { font-size: 13px; margin-top: 8px; }
+@media (min-width: 650px) { .connection-tab { padding: 20px; flex-direction: row; align-items: center; gap: 14px; } .connection-tab small { font-size: 13px; } }
+@media (max-width: 480px) { .telegram-destination { padding: 14px; } .telegram-destination-heading { flex-wrap: wrap; } .telegram-destination-actions { gap: 14px; } }

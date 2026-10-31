@@ -1,0 +1,25 @@
+.notification-badge { margin-left: auto; min-width: 23px; height: 23px; border-radius: 20px; display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; background: var(--ink); color: var(--white); font-size: 11px; font-weight: 700; }
+.notification-feed { max-width: 960px; border: 1px solid var(--line); border-radius: 16px; background: var(--white); overflow: hidden; }
+.notification-item { display: flex; align-items: flex-start; gap: 14px; padding: 20px; border-bottom: 1px solid var(--line); }
+.notification-item:last-child { border-bottom: 0; }
+.notification-item.unread { background: color-mix(in srgb, var(--mint) 9%, var(--white)); }
+.notification-dot { width: 7px; height: 7px; margin-top: 6px; border-radius: 50%; background: transparent; flex-shrink: 0; }
+.notification-item.unread .notification-dot { background: var(--accent); }
+.notification-content { flex: 1; min-width: 0; }
+.notification-context { display: flex; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+.notification-context > :first-child { overflow-wrap: anywhere; }
+.notification-context > :last-child { white-space: nowrap; }
+.notification-content h2 { font-size: 17px; line-height: 1.4; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.notification-content h2 a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.notification-content > p { font-size: 13px; margin-top: 7px; overflow-wrap: anywhere; }
+.notification-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-top: 14px; }
+.notification-footer .text-button { font-size: 13px; }
+.notifications-preferences-link { font-size: 13px; margin-top: 24px; }
+.browser-alert-preferences { padding: 4px 0 24px; }
+.browser-alert-preferences h3 { font-size: 17px; margin-bottom: 10px; }
+.browser-alert-preferences > p { font-size: 13px; line-height: 1.65; margin-bottom: 16px; }
+.browser-alert-preferences .field-note { margin: 12px 0; }
+.channel-preferences { margin: 0 0 24px; padding: 0 0 20px; border-bottom: 1px solid var(--line); }
+.email-account { margin-bottom: 30px; padding-bottom: 26px; border-bottom: 1px solid var(--line); }
+.email-account > p { font-size: 13px; margin-bottom: 16px; overflow-wrap: anywhere; }
+@media (min-width: 700px) { .notification-item { padding: 24px 28px; gap: 18px; } .notification-content h2 { font-size: 19px; } }
