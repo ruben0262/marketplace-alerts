@@ -1,365 +1,198 @@
-# Marketplace Alerts
+# Scout · Marketplace Alerts
 
-A small Python app that checks eBay and Vinted for new marketplace listings and sends matching items to a Telegram channel.
+A mobile-first React app for finding products on Vinted and eBay, with a Node.js API, MongoDB accounts and per-user settings, and in-app notifications with optional email and private Telegram destinations. The existing Python marketplace adapters do the actual searches.
 
-It supports:
+- Landing page with Framer Motion transitions and reduced-motion support.
+- Email sign-up, email-or-username login, password changes, email verification, and recovery by email, one-time key or a verified private Telegram destination.
+- Overview, visual search builder, editable/pausable searches, matching listings, notifications, Connections tabs, and account preferences.
+- Vinted enabled for new accounts; eBay available only after each user adds their own production keys.
+- MongoDB stores accounts, sessions, encrypted credentials, settings, searches, matching products, and delivery history.
+- Quiet first scans, per-destination cross-search deduplication, expiring worker leases, marketplace cooldowns, and retryable Telegram/email delivery.
+- Light/dark themes, browser notification preferences, and a mobile landing page with local photography and accessible process animations.
 
-- configurable search terms, sizes, product types, prices, and listing age
-- multiple eBay marketplaces and Vinted regional sites
-- Telegram posts containing images, description, price, clickable product link, listing age, and ID
-- JSON tracking with fast in-memory indexes so listings are not processed or posted twice
-- built-in English condition labels and optional full listing translation through DeepL
-- eBay's official Browse API and a best-effort Vinted integration
+## Run locally
 
-## Project structure
-
-```text
-listing_monitor/       Application code
-  marketplaces/        eBay and Vinted integrations
-tests/                 Automated tests
-.env.example           Credential template
-config.example.yaml    Search configuration template
-Dockerfile             Container image definition
-compose.yaml           VPS container and persistent state
-.dockerignore          Files excluded from Docker builds
-README.md              Setup and usage
-CHANGELOG.md            Version history
-pyproject.toml          Python package and dependencies
-```
-
-Your real `.env`, `config.yaml`, databases, caches, and build files are ignored by Git.
-
-## Install
-
-Python 3.11 or newer is required.
-
-Windows PowerShell:
-
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install -e .
-Copy-Item .env.example .env
-Copy-Item config.example.yaml config.yaml
-```
-
-macOS or Linux:
+Requires Node.js 22.12+ (24 recommended), Python 3.11+, and MongoDB/Atlas.
 
 ```bash
+npm ci
 python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e .
+.venv/bin/python -m pip install -e .
+# For a fresh checkout only; do not overwrite an existing .env:
 cp .env.example .env
-cp config.example.yaml config.yaml
 ```
 
-## Configure
-
-Edit `.env` and add your credentials:
-
-```dotenv
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_CHAT_ID=
-EBAY_CLIENT_ID=
-EBAY_CLIENT_SECRET=
-DEEPL_API_KEY=
-```
-
-Create the Telegram bot through `@BotFather`, add it to your channel as an administrator, and use either the channel username such as `@my_channel` or its numeric chat ID.
-
-Edit `config.yaml` to choose:
-
-- search phrases and marketplaces
-- required or excluded keywords
-- size and product keyword groups
-- maximum listing age and optional price limits
-- polling interval and number of pages
-
-The example configuration starts with eBay disabled. After adding eBay credentials, change `sources.ebay.enabled` to `true`.
-
-### eBay API requirements
-
-The eBay integration uses the official production Browse API with an OAuth Application token.
-`EBAY_CLIENT_ID` must be the Production App ID and `EBAY_CLIENT_SECRET` must be the matching
-Production Cert ID; a user login token is not required for Browse search or `getItem`. Production
-Buy API access is restricted, so the keyset must be enabled and the application may need approval
-through the eBay Partner Network and Developer Support. eBay also requires a Production keyset to
-subscribe to or opt out of marketplace account deletion notifications before it can be enabled.
-See eBay's [Buy API requirements](https://developer.ebay.com/api-docs/buy/buy-requirements.html)
-and [getting-started guide](https://developer.ebay.com/develop/guides-v2/get-started-with-ebay-apis).
-
-Each eBay marketplace has a `delivery_country` and `currency`. The currency is required whenever a
-search uses `min_price` or `max_price`, because Browse requires `priceCurrency` with its price
-filter. `max_age_hours` is sent as eBay's `itemStartDate` filter as well as checked locally. Search
-uses `sort=newlyListed`; full Brand, Size, Condition, description, seller, and image data are then
-retrieved with Browse `getItem` for previously unhandled candidates. Set
-`sources.ebay.fetch_item_details: false` to use only search-summary data.
-
-The default Browse limit is 5,000 calls per day. Searches with identical `query`, price, and eBay
-category settings share one remote result per polling cycle, so prefer one broad remote query with
-separate local keyword groups. At a one-minute interval, one shared query across three marketplaces
-normally costs at least 4,320 search calls per day, plus extra pages and new-item detail calls. If
-your searches need multiple pages or distinct queries, increase `poll_interval_seconds` or request
-a higher limit after eBay's Application Growth Check. See eBay's
-[API call limits](https://developer.ebay.com/develop/get-started/api-call-limits).
-
-eBay does not offer a general public websocket that pushes every new matching marketplace listing.
-Its notification topics cover changes such as availability and are access-limited; the newly-listed
-Feed files are delayed and are not suitable for minute-level alerts. Polling Browse is therefore the
-appropriate API for this monitor.
-
-## Run with Docker on a VPS
-
-Docker Compose runs one continuous Marketplace Alerts container. No ports or additional services are required.
-
-Create your private files first:
+Set `MONGODB_URI`, `MONGODB_DB`, and `ENCRYPTION_KEY` in `.env`. Generate the encryption key once:
 
 ```bash
-cp .env.example .env
-cp config.example.yaml config.yaml
-mkdir -p data
-sudo chown -R 10001:10001 data
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-Fill in `.env` and edit `config.yaml`, then validate them inside the container:
+The URI can include credentials directly or use `<db_username>` / `<db_password>` placeholders with `MONGODB_USERNAME` and `MONGODB_PASSWORD`. Atlas must allow the server's IP and the database user must be able to read/write and create indexes. Keep a backup of the encryption key alongside your database backup; replacing it makes existing integration credentials unreadable.
 
 ```bash
-docker compose run --rm marketplace-alerts \
-  python -m listing_monitor --check-config --config /app/config.yaml
+npm run dev
 ```
 
-Run one dry scan before enabling notifications:
+Open **http://localhost:5173**. Vite proxies `/api` to Node on port 3000. Set `APP_URL=http://localhost:5173` for Vite development. The Vite proxy preserves the browser’s host, so `localhost` and `127.0.0.1` both work. The API accepts requests from the browser’s actual same origin and this configured Vite origin; cross-site writes remain rejected. `APP_URL` also sets the origin used in email/recovery links. The worker runs with the API. Set `WORKER_ENABLED=false` for UI-only work.
+
+For a compiled local application:
 
 ```bash
-docker compose run --rm marketplace-alerts \
-  python -m listing_monitor --once --dry-run --config /app/config.yaml
+npm run build
+APP_URL=http://localhost:3000 npm start
 ```
 
-Start the monitor in the background:
+## Docker / hosting
 
 ```bash
 docker compose up -d --build
+docker compose logs -f marketplace-alerts
 ```
 
-View logs and container status:
+The image builds React and bundles Node plus Python. Atlas remains external; MongoDB data does not depend on the container. The named `scout-data` volume retains Vinted session cookies and rotating operational logs. Containers run without root privileges and have a database-backed healthcheck. The service binds to **127.0.0.1:3000** by default.
+
+Startup logs confirm MongoDB connection and ping before server readiness. API, scans and deliveries produce structured JSON logs in the terminal and `data/logs/scout.jsonl`, with bounded rotation and no credentials or request bodies. See [operations and logging](docs/operations.md) for commands, retention and environment settings.
+
+Behind a reverse proxy, set:
+
+```dotenv
+DOCKER_APP_URL=https://scout.rubenlekli.com
+DOCKER_COOKIE_SECURE=true
+DOCKER_TRUST_PROXY=true
+```
+
+Use `DOCKER_TRUST_PROXY=true` only with one trusted reverse proxy; otherwise leave it false. These Docker settings override the local `COOKIE_SECURE` and `TRUST_PROXY` values, so development can continue over HTTP. Set `BIND_ADDRESS` deliberately if the reverse proxy cannot reach the loopback binding. `APP_PORT` selects the host port. Point the proxy at the app and terminate HTTPS there. `DOCKER_APP_URL` must match the browser's real origin so recovery links and CSRF checks work.
+
+For this installation, create the Cloudflare Tunnel hostname **scout.rubenlekli.com**, pointing to **http://127.0.0.1:3000** when cloudflared runs on the same host. Keep the app port bound to loopback. If cloudflared runs in a separate container, use a shared private Docker network and the service's internal port instead; its own `127.0.0.1` will not reach Scout. Keep the public URL HTTPS and the origin HTTP.
+
+Copy the ignored `.env` securely to the server; Git does not contain the database password, encryption key, or SMTP password. Preserve the existing encryption key. Before starting the service:
 
 ```bash
-docker compose logs -f marketplace-alerts
+docker compose config --quiet
+docker compose build
+docker compose run --rm marketplace-alerts npm run check:deployment
+docker compose up -d
 docker compose ps
 ```
 
-Restart or stop it:
+The deployment check verifies public-origin settings, MongoDB access/indexes, and SMTP TLS/authentication without sending mail. After the tunnel is online, open the public site and check signup, login and a fresh reset link. The container restarts unless explicitly stopped; enable Docker and cloudflared at server boot. A Docker healthcheck reports failures but does not itself restart an unhealthy running process.
+
+The background worker claims one search at a time and limits delivery bursts. Database leases permit multiple processes without concurrent work on one search. Scale modestly: Vinted and eBay impose their own rate limits, and each active search/region adds requests. Poll intervals are targets, not guarantees; slow searches can delay others. The default is two minutes, with a fifteen-minute cooldown after a marketplace failure. Search subprocesses have a two-minute hard timeout per source.
+
+## Import an existing profile
+
+Normal startup never seeds an account, imports global credentials, or resets a password. To migrate explicitly, add temporary `IMPORT_USERNAME` and `IMPORT_PASSWORD` entries to the ignored `.env`, then:
 
 ```bash
-docker compose restart marketplace-alerts
-docker compose down
+npm run import:profile
 ```
 
-The `restart: unless-stopped` policy restarts the monitor after a crash or VPS reboot. The host directory `./data` is mounted at `/app/data`, so `data/listings.json` and Vinted cookies remain directly visible on the VPS after container rebuilds, removal, and `docker compose down`.
+The importer reads `config.yaml`, or `config.example.yaml` if no personal YAML exists. It migrates the Telegram/eBay credentials, both proxies, DeepL key, user agent, search filters, supported regions and scan preferences. Credentials are encrypted with AES-256-GCM. The password is hashed with scrypt. The one-time account recovery key is written to `.profile-recovery-key` with owner-only permissions. Save it privately. Remove `IMPORT_PASSWORD` after testing. An existing username is left unchanged on subsequent imports.
 
-The `data/` directory is gitignored. Back it up like any other local database. `docker compose down -v` does not remove this bind-mounted directory, but deleting `data/listings.json` resets duplicate protection.
+New users sign up with an email address and receive their own blank configuration and a recovery key. Existing imported usernames still work in the “Email or username” login field; add an email later under Account & preferences. No user inherits imported environment credentials. Prices use each marketplace region's currency without conversion; select one region when a fixed-currency budget matters.
 
-Run only one container for a given configuration and state file. Scaling the service into replicas can cause duplicate Telegram notifications. If you need separate monitors, use separate Compose projects, configurations, and data directories.
+## Connections and per-search alerts
 
-### One-time migration from the former Docker volume
+Open **Connections** in the app navigation. Its Vinted, eBay and Telegram tabs keep marketplace credentials separate from account preferences:
 
-If the VPS already has history in the old `marketplace-alerts-data` named volume, copy it before starting this bind-mounted version:
+- **Vinted:** enabled by default. Select regions and optionally configure a proxy, then test the connection.
+- **eBay:** add your own production App ID and Cert ID, select regions, and test. Both keys are required before a search can use eBay.
+- **Telegram:** add named destinations with a bot token and numeric chat ID. Open `@BotFather` to create a bot, start a chat with it, then save and test the destination. Several destinations can use different bots or chats. Credentials remain private to the account and are never returned to the browser; editing shows blank replacement fields.
 
-```bash
-docker compose down
-mkdir -p data
-OLD_VOLUME="$(docker volume ls --format '{{.Name}}' | grep 'marketplace-alerts-data$' | head -n1)"
-test -n "$OLD_VOLUME"
-docker run --rm --user 0 \
-  -v "$OLD_VOLUME:/source:ro" \
-  -v "$PWD/data:/target" \
-  marketplace-alerts:latest sh -c 'cp -a /source/. /target/'
-sudo chown -R 10001:10001 data
-```
+In each search, choose zero, one or several Telegram destinations. New searches enable **In-app notifications** by default; **Email alerts** are optional and require a verified email plus configured SMTP. Leaving Telegram unchecked does not prevent matching listings from appearing in the app. Routes apply to future finds; changing destinations does not replay old matches. Deleting a destination removes it from searches and cancels its pending deliveries. Imported single-bot accounts migrate automatically to a named destination without copying credentials to other users.
 
-Confirm that `data/listings.json` exists before running `docker compose up -d --build`. Do not delete the old named volume until the migrated service logs the expected tracked-ID count.
+Telegram notifications include a product image when available, a caption and listing button; rejected images fall back to text. Delivery is tracked separately for each destination, so a failed bot does not block the others.
 
-## Run
+## Account, appearance and browser preferences
 
-Check the configuration without contacting any service:
+Open the **account icon** at the bottom of the sidebar for the dark-mode toggle, **Settings**, and **Log out**. Settings separates appearance, notifications, search preferences and account security into individual cards. Themes persist on the device and sync with the signed-in account without a popup. If saving fails, an inline message offers a retry.
 
-```powershell
-python -m listing_monitor --check-config
-```
+The **Notifications** page keeps new matches and unread state in your account. Browser alerts additionally require the account’s **Allow browser alerts** preference and permission from that browser. Use **Enable browser notifications** to grant permission. These are browser notifications while Scout is open, not background push after the app closes; some mobile browsers do not support them. Email and Telegram can deliver while you are away.
 
-Preview one scan without posting to Telegram or saving listing state:
+Turning off **Send Telegram and email alerts** pauses external delivery while the feed and enabled in-app notifications continue. A quiet first scan fills Latest finds without alerting by default. Choose **Include existing matches in my first alerts** on a search to change that behavior.
 
-```powershell
-python -m listing_monitor --once --dry-run
-```
+## Email and recovery
 
-Run one real scan:
-
-```powershell
-python -m listing_monitor --once
-```
-
-Run continuously:
-
-```powershell
-python -m listing_monitor
-```
-
-Stop continuous mode with `Ctrl+C`. Use `python -m listing_monitor --help` to see every option.
-
-## Duplicate protection
-
-Each product is identified by its source and native product ID. The ID is included in its Telegram post and stored under a key such as `vinted:9334396545` in `data/listings.json`; the regional domain, title, URL, and search name do not affect duplicate detection.
-
-The JSON file is durable storage, while its top-level `products` dictionary and an in-memory set provide average O(1) product-ID checks. The monitor records every product returned by a marketplace, not only matches. Each record retains searchable listing metadata such as title, URL, price, description, images, listing time, seller, attributes, searches, marketplaces, and first/last seen times. Successful Telegram sends are persisted immediately, and other state changes are saved after each search using an atomic file replacement. A failed send is deliberately left eligible for retry.
-
-Inspect the local database directly on the VPS:
-
-```bash
-jq '.products | length' data/listings.json
-jq '.products["vinted:9334396545"]' data/listings.json
-```
-
-If `jq` is unavailable, `python3 -m json.tool data/listings.json` provides a readable view.
-
-Marketplace result pages must be checked again to discover new IDs, but previously handled listings are not fetched in detail or posted again. Searches with identical marketplace parameters also share one response during a polling cycle.
-
-When `send_existing_on_start` is `false`, the first successful scan records existing matches without flooding Telegram. Only later listings are posted.
-
-Each completed search writes an INFO summary with separate counts for matches sent to Telegram,
-first-scan matches seeded silently, products already handled, products already checked for that
-search, brand/filter rejections, and Telegram failures. A successful delivery also logs the source
-and native product ID. This makes a quiet source diagnosable without exposing credentials.
-
-Version-1 JSON state is automatically consolidated into the product-ID index. If an older `data/listings.sqlite3` database exists and the JSON file does not, its duplicate and initialization history is imported automatically on first startup. Keep the state files intact until the migrated run completes.
-
-## English translation
-
-Common Vinted condition labels in French, German, Spanish, Italian, and Dutch are translated locally without an account or network request. Unknown conditions, titles, descriptions, and colours can optionally be translated with DeepL:
-
-1. Add `DEEPL_API_KEY` to the private `.env` file.
-2. Set `translation.enabled: true` in `config.yaml`.
-3. Use the Free API URL from the example configuration for a DeepL API Free key, or change it to `https://api.deepl.com/v2/translate` for a Pro API key.
-4. Restart the monitor.
-
-The service auto-detects the source language, requests British English by default, caches repeated text in memory, and keeps the original text if translation is unavailable. Enabling it sends the listing title, description, condition, and colour text to DeepL, so review its privacy and usage terms before use. Brand, size, seller name, IDs, prices, and links are kept unchanged. See the [DeepL translation API documentation](https://developers.deepl.com/api-reference/translate/request-translation).
-
-## Search filters
-
-Each search in `config.yaml` supports:
-
-- `query`: marketplace search text
-- `sources`: `ebay`, `vinted`, or both
-- `max_age_hours`: maximum listing age, or `null` to disable
-- `min_price` and `max_price`: optional price range
-- `required_brands`: accepted brands, normalized for case, spaces, and punctuation
-- `excluded_sizes`: exact size labels to reject, using structured size data when available
-- `include_keywords`: every phrase must match
-- `include_any_groups`: one phrase from every group must match
-- `exclude_keywords`: any matching phrase rejects the listing
-- source-specific category IDs
-
-Filtering checks the title, description, and available attributes such as brand, size, and colour.
-When `required_brands` is set, a structured marketplace brand must match one configured value exactly after normalization. If a marketplace provides no brand attribute, matching falls back to the normalized title and description.
-
-`excluded_sizes` compares lowercase canonical labels while ignoring spaces and punctuation. It
-recognizes common localized size fields and aliases, so `XS`, `X S`, `x-small`, `extra small`,
-`S`, and `small` can be rejected without matching letters inside words such as `shorts` or
-possessives such as `men's`.
-
-Marketplace searches and Telegram delivery are ordered newest-first. Increase `pages_per_search` to backfill older results; adapters stop early when a page is not full. Use `max_age_hours: null` if old listings should remain eligible. Setting `send_existing_on_start: true` sends matching backfill results the first time a search runs, so use it carefully.
-
-For API efficiency, searches that use the same marketplace query and source-specific category/price
-settings share one fetched result during each cycle. Product type, size, brand, and exclusion rules
-remain local, so several alert rules can safely reuse the same broad query.
-
-## Telegram delivery rate
-
-Telegram recommends avoiding more than one message per second to one chat. The monitor spaces
-delivery using `telegram.min_send_interval_seconds` (default `1.1`) and honors Telegram's
-server-provided `retry_after` delay after HTTP 429 responses. A rate-limited photo is not retried
-immediately as a text message, because that would consume the same limit again. Listings that still
-cannot be delivered remain unseen and are eligible for retry during a later scan.
-
-## Important Vinted note
-
-Vinted does not provide an official public marketplace-search API. The Vinted adapter uses the website's catalog and item-detail endpoints and may stop working if Vinted changes them. It refreshes anonymous sessions when needed and does not attempt to bypass CAPTCHAs, access controls, or rate limits. An eBay or Vinted failure does not stop the other configured searches.
-
-The adapter uses browser-compatible anonymous sessions and stores cookies under
-`data/vinted-cookies`. If a Vinted site rejects a VPS address, that site is paused for
-`retry_cooldown_seconds` instead of being retried for every configured search.
-
-Some hosting-provider IP ranges are rejected by Vinted even when the same URL works from a home
-browser. If that happens, use a trusted HTTP proxy that you are authorized to use by adding this
-only to the private `.env` file:
+Set these values in the ignored `.env` to enable email verification, password-reset links and optional product alerts:
 
 ```dotenv
-VINTED_PROXY=http://user:password@host:port
+SMTP_HOST=smtp.zoho.eu
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=no-reply@flow-solutions.xyz
+SMTP_PASSWORD=your-smtp-password
+MAIL_FROM=no-reply@flow-solutions.xyz
 ```
 
-The `http://` prefix is optional; both forms are accepted. Never commit the proxy credentials.
-Restart the container after changing `.env`. A proxy is optional; leave the value empty first and
-try the browser-compatible session update on its own. This project does not solve or bypass a
-CAPTCHA. The official
-[Vinted Pro Integrations API](https://pro-docs.svc.vinted.com/) manages a Pro seller's own inventory
-and webhooks; it does not provide public catalog discovery for this monitor.
+Use your provider’s authenticated SMTP account and an allowed sender address. Port 587 requires STARTTLS; for implicit TLS, usually port 465, set `SMTP_SECURE=true`. `APP_URL` must point to the app’s reachable browser URL, and Docker’s public origin is `DOCKER_APP_URL`. Restart the app after changing environment values. Without SMTP, account sign-up, existing username login, in-app alerts and Telegram still work; email delivery remains unavailable.
 
-### Keeping proxy traffic down
+Email sign-up sends a verification link when SMTP is configured. In Account & preferences, an existing user can add or change their email by confirming the current password, or request another verification link. Verification links expire after 24 hours and are used once. Changing the email clears verification and cancels pending alerts for the previous address.
 
-A metered residential proxy bills by the gigabyte, and catalog JSON is the only traffic that goes
-through it: eBay, DeepL, and Telegram all connect directly, and Telegram fetches listing images
-itself from their URLs. Three settings control the bill:
+Forgot-password accepts an email or existing username and gives a generic response regardless of account existence. Reset links go to the account email when email delivery is available; otherwise a configured, verified **private** Telegram recovery destination can be used. Select that destination in Connections → Telegram. Groups/channels may receive product alerts but cannot receive password-reset links. A saved recovery key also works without SMTP or Telegram.
 
-| Setting | Effect |
+Reset links expire after 15 minutes and work once. Recovery keys work once and rotate on recovery/password changes. Password recovery invalidates previous sessions. Save the new recovery key shown after a reset or password change.
+
+## Tests
+
+```bash
+npm test
+npm run test:python
+npm run build
+npx playwright install chromium  # first browser installation only
+npm run test:e2e
+```
+
+The Node tests use a real, temporary MongoDB instance (`mongodb-memory-server`), not a mocked repository. Its first run downloads a MongoDB binary into `/tmp/scout-mongodb-binaries` (override `MONGOMS_DOWNLOAD_DIR` if desired). Tests require permission to open local ports. Browser journeys run the compiled app on port 3100 against their own temporary database; marketplace, Telegram, email and browser/OS notification edges use deterministic fixtures. They cover desktop and mobile email sign-up, search lifecycle, private Telegram routing, matches, Connections, notification preferences, email verification, recovery and password changes with user-facing selectors and observable outcomes. The regression checks also cover bulk notification reads, failed requests and retries, account-menu keyboard behavior, silent theme persistence, and denied/dismissed notification permission. A real Vite-proxy integration test exercises account writes while confirming cross-site requests are rejected. No arbitrary sleeps or retry-to-pass settings are used.
+
+Live checks are optional and never run as part of the automated suite. Put temporary `CHECK_LOGIN` (email or username) and `CHECK_PASSWORD` values in the ignored `.env`, then remove them when finished. Existing `IMPORT_USERNAME` / `IMPORT_PASSWORD` values remain supported as a fallback.
+
+```bash
+npm run check:live
+# Login and real Vinted/eBay connection checks; no test-message sends.
+
+npm run check:live -- --send-tests
+# Also sends ONE REAL Telegram test to EACH saved destination.
+
+npm run check:live -- --scan-and-queue
+# Also scans one eligible active search. This can queue real email/Telegram
+# product alerts, which an already-running worker may deliver immediately.
+
+npm run check:live -- --send-tests --scan-and-queue
+# Explicitly perform both actions above.
+
+npm run check:live -- --browser-only
+# Inspect the compiled app using the real account, on desktop and mobile.
+```
+
+Browser checks require a current `npm run build` and installed Playwright Chromium. They start a temporary loopback API without a worker, check email-or-username login, existing searches, masked credentials in Connections, private recovery choices, account preferences, notifications and matching listings. They do not save settings/search changes or send tests. Login/logout, rate limits and idempotent account migrations still touch the real database. Preview screenshots contain private account content and are stored under ignored `data/` with owner-only permissions. The scripts log only status/count summaries, never returned account objects, destination names, credentials or raw provider errors.
+
+Never point ordinary automated tests at your production database. External delivery is at-least-once: if a message succeeds remotely but its acknowledgement/database update is lost, a retry can duplicate it. Routine rescans and concurrent workers deduplicate deliveries per product and destination.
+
+## Source map
+
+| Location | Purpose |
 | --- | --- |
-| `probe_per_page` | Size of the cheap first page used only to answer "is anything new here?". Because results are newest-first, one already-recorded product on that page proves everything older is known, so no full page is fetched. `0` disables probing. |
-| `results_per_page` | Size of a full page, fetched only when every probed product is unseen. |
-| `pages_per_search` | Maximum full pages per site. Pagination stops early at the first page containing a known product. |
+| `src/` | React pages, mobile layouts, lazy motion and reusable UI |
+| `server/app.js` | Validated HTTP API, cookie sessions, CSRF protection and rate limiting |
+| `server/worker.js` | Search scheduling, MongoDB leases and notification retries |
+| `server/integrations.js` | Bounded Python bridge and Telegram transport |
+| `server/mailer.js` | SMTP delivery, verification/reset emails and product alert formatting |
+| `server/logger.js` | Allowlisted operational events, stdout and bounded rotating files |
+| `server/telegram-bots.js` | Private bot migration, credential storage and public masked status |
+| `listing_monitor/bridge.py` | Per-user adapter/filter/translation execution |
+| `scripts/` | Explicit profile import and live validation |
+| `tests/` | Account, isolation, worker, import, adapter and browser behavior tests |
+| `docs/legacy-monitor.md` | Historical standalone Python CLI reference |
 
-Product identity ignores the regional domain, so the same item found on several Vinted sites is
-one product. Check which of your configured sites actually contribute unique alerts before adding
-more: each extra site is a full extra request every cycle, and regional EU catalogs overlap
-heavily. Measure it against `data/listings.json` rather than guessing, using each record's
-`marketplaces` list.
+The Python CLI still works independently, but its file-based history is separate from the web application's MongoDB records. Stop an old single-user monitor before enabling the same searches in the web app, to avoid two independent alert streams. Existing legacy JSON listing history is not automatically imported.
 
-Use a sticky residential proxy session when possible. If the proxy changes its exit IP between the
-cookie refresh and catalog/detail request, Vinted may reject the session. When item-detail access
-fails, the monitor pauses detail lookups for that site and continues posting the catalog title,
-price, image, brand, size, and link. Set `fetch_item_details: false` to disable descriptions and
-extra-image lookups completely while keeping catalog alerts.
+The visual direction was informed by [MotionSites](https://motionsites.ai/) and the FlowSolutions references. Photography and the local font are credited in [docs/landing-assets.md](docs/landing-assets.md); demo listings are illustrative. Motion respects the device setting through [MotionConfig](https://motion.dev/docs/react-motion-config). A shared MongoClient uses the driver's [connection pool](https://www.mongodb.com/docs/drivers/node/current/connect/mongoclient/).
 
-Anonymous catalog access is sufficient for fresh listing discovery. Account login is intentionally
-not implemented because it adds account and credential risk and is unnecessary while catalog scans
-continue succeeding.
+## Support and delivery
 
-To check only Vinted connectivity without posting or changing deduplication state:
+`/support` is available before login, with another entry in the app navigation. Messages go only to **hello@flow-solutions.xyz**, from **no-reply@flow-solutions.xyz**, with the customer's email as Reply-To. The confirmation includes a ticket reference and means the request is saved for delivery.
 
-```powershell
-docker compose run --rm marketplace-alerts python -m listing_monitor --once --dry-run
-```
+Tickets are persisted in MongoDB, delivered by a separate worker loop, and retried with backoff after SMTP failures. Retries of the same browser submission reuse the ticket; simultaneous workers use a delivery lease. As with SMTP generally, a connection loss after remote acceptance can cause a duplicate on retry; a stable Message-ID helps receivers identify it. Tickets expire from the app database after 90 days; mailbox retention is separate. Keep `WORKER_ENABLED=true` on the server. Request validation, same-origin protection and per-IP/per-email limits apply to the public form. If SMTP is unconfigured, the form gives the direct support email instead of claiming success.
 
-## Development
-
-```powershell
-python -m pip install -e ".[dev]"
-python -m pytest -q
-python -m ruff check .
-```
-
-## Repository safety
-
-Never commit `.env`, `config.yaml`, state files, databases, or credentials. Before pushing, check staged files with:
-
-```powershell
-git status --short
-git diff --cached
-```
-
-Revoke a credential immediately if it is exposed.
-
-The application suppresses `httpx` request logs and redacts Telegram tokens and URL-embedded proxy
-credentials from formatted logs. Logs should still be handled as potentially sensitive.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+HTML and the service worker revalidate on each load, hashed assets cache for a year, and Express compresses static text responses. Authenticated APIs remain `no-store`. Landing, app, settings, support and motion code load separately; fonts, logos and photos are served locally.

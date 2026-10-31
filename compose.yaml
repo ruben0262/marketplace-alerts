@@ -2,26 +2,29 @@ services:
   marketplace-alerts:
     build: .
     image: marketplace-alerts:latest
-    restart: always
+    restart: unless-stopped
     init: true
-    env_file:
-      - .env
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      APP_URL: ${DOCKER_APP_URL:-http://localhost:3000}
+      COOKIE_SECURE: ${DOCKER_COOKIE_SECURE:-false}
+      TRUST_PROXY: ${DOCKER_TRUST_PROXY:-false}
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3000}:3000"
     volumes:
-      - ./config.yaml:/app/config.yaml:ro
-      # Host-visible state that survives container removal and `docker compose down`.
-      - ./data:/app/data
+      - scout-data:/app/data
+    stop_grace_period: 150s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
 
-  # Restarts any container that reports unhealthy, including marketplace-alerts when
-  # its heartbeat healthcheck fails because the event loop wedged on a native call.
-  autoheal:
-    image: willfarrell/autoheal:latest
-    restart: always
-    environment:
-      AUTOHEAL_CONTAINER_LABEL: all
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+volumes:
+  scout-data:

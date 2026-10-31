@@ -1,6 +1,6 @@
 .git
 .env*
-config*.yaml
+config.yaml
 .venv
 venv
 __pycache__
@@ -16,4 +16,11 @@ tests
 *.sqlite3
 *.db
 *.log
+node_modules
+playwright-report
+test-results
+.profile-recovery-key
+.agents
+.codex
+.aws
 
